@@ -15,7 +15,10 @@
          "private/guts.rkt"
          "private/legacy.rkt"
          "private/ds.rkt"
-         "private/opt.rkt")
+         "private/opt.rkt"
+         "private/generator.rkt"
+         "private/generator-base.rkt"
+         "private/env.rkt")
 
 (provide
  opt/c define-opt/c ;(all-from-out "private/opt.rkt")
@@ -27,6 +30,9 @@
              procedure-accepts-and-more?
              check-procedure
              check-procedure/more
+             base->-rngs/c
+             base->-doms/c
+             base->?
              make-contracted-function)
  (all-from-out "private/arr-i.rkt")
  (all-from-out "private/box.rkt")
@@ -41,4 +47,7 @@
  (all-from-out "private/legacy.rkt")
  (except-out (all-from-out "private/guts.rkt")
              check-flat-contract
-             check-flat-named-contract))
+             check-flat-named-contract)
+ ;(all-from-out "private/generator.rkt")
+ (all-from-out "private/generator-base.rkt")
+ (all-from-out "private/env.rkt"))

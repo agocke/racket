@@ -3,6 +3,8 @@
 (require "helpers.rkt"
          "blame.rkt"
          "prop.rkt"
+         "rand.rkt"
+         "generator-base.rkt"
          racket/pretty)
 
 (require (for-syntax racket/base
@@ -398,7 +400,14 @@
    #:projection get-any-projection
    #:stronger (λ (this that) (any/c? that))
    #:name (λ (ctc) 'any/c)
-   #:first-order get-any?))
+   #:first-order get-any?
+   #:generator (λ (ctc)
+                 (λ (n-tests size env)
+                   (rand-choice
+                    [1/4 #t]
+                    [1/4 #f]
+                    [1/4 0]
+                    [else "bla"])))))
 
 (define/final-prop any/c (make-any/c))
 
@@ -502,7 +511,15 @@
            (procedure-closure-contents-eq? (predicate-contract-pred this)
                                            (predicate-contract-pred that))))
    #:name (λ (ctc) (predicate-contract-name ctc))
-   #:first-order (λ (ctc) (predicate-contract-pred ctc))))
+   #:first-order (λ (ctc) (predicate-contract-pred ctc))
+   #:generator (λ (ctc)
+                 (let ([fn (predicate-contract-pred ctc)])
+                   (find-generator fn (contract-name ctc))))
+   #:tester (λ (ctc)
+              (let ([pred (predicate-contract-pred ctc)])
+                (λ (val n-tests size env)
+                  (unless (pred val)
+                    (error "Contract Generator Error 1")))))))
 
 (define (build-flat-contract name pred) (make-predicate-contract name pred))
 

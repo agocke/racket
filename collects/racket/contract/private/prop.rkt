@@ -1,6 +1,7 @@
 #lang racket/base
 
-(require "blame.rkt")
+(require "blame.rkt"
+         "generator-base.rkt")
 
 (provide prop:contract
          contract-struct?
@@ -8,6 +9,9 @@
          contract-struct-first-order
          contract-struct-projection
          contract-struct-stronger?
+         contract-struct-generator
+         contract-struct-property
+         contract-struct-tester
 
          prop:flat-contract
          flat-contract-struct?
@@ -34,7 +38,7 @@
 ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define-struct contract-property [ name first-order projection stronger generator ]
+(define-struct contract-property [ name first-order projection stronger generator tester ]
   #:omit-define-syntaxes)
 
 (define (contract-property-guard prop info)
@@ -72,6 +76,22 @@
   (let* ([prop (contract-struct-property a)]
          [stronger (contract-property-stronger prop)])
     (stronger a b)))
+
+(define (contract-struct-generator c)
+  (let* ([prop (contract-struct-property c)]
+         [generator (contract-property-generator prop)])
+    (if (procedure? generator)
+        (generator c)
+        (begin
+          (count-missing-generator (contract-struct-name c))
+          #f))))
+
+(define (contract-struct-tester c)
+  (let* ([prop (contract-struct-property c)]
+         [tester (contract-property-tester prop)])
+    (if (procedure? tester)
+        (tester c)
+        #f)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
@@ -154,7 +174,8 @@
          #:first-order [get-first-order #f]
          #:projection [get-projection #f]
          #:stronger [stronger #f]
-         #:generator [generator #f])
+         #:generator [generator #f]
+         #:tester [tester #f])
 
   (let* ([get-name (or get-name (lambda (c) default-name))]
          [get-first-order (or get-first-order get-any?)]
@@ -165,7 +186,7 @@
                    get-name get-first-order)])]
          [stronger (or stronger weakest)])
 
-    (mk get-name get-first-order get-projection stronger generator)))
+    (mk get-name get-first-order get-projection stronger generator tester)))
 
 (define build-contract-property
   (build-property make-contract-property 'anonymous-contract values))
@@ -219,7 +240,7 @@
 ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define-struct make-contract [ name first-order projection stronger ]
+(define-struct make-contract [ name first-order projection stronger generator tester ]
   #:omit-define-syntaxes
   #:property prop:contract
   (build-contract-property
@@ -227,9 +248,10 @@
    #:first-order (lambda (c) (make-contract-first-order c))
    #:projection (lambda (c) (make-contract-projection c))
    #:stronger (lambda (a b) ((make-contract-stronger a) a b))
-   #:generator #f))
+   #:generator (lambda (c) ((make-contract-generator c)))
+   #:tester (lambda (c) ((make-contract-tester c)))))
 
-(define-struct make-chaperone-contract [ name first-order projection stronger ]
+(define-struct make-chaperone-contract [ name first-order projection stronger generator tester ]
   #:omit-define-syntaxes
   #:property prop:chaperone-contract
   (build-chaperone-contract-property
@@ -237,9 +259,10 @@
    #:first-order (lambda (c) (make-chaperone-contract-first-order c))
    #:projection (lambda (c) (make-chaperone-contract-projection c))
    #:stronger (lambda (a b) ((make-chaperone-contract-stronger a) a b))
-   #:generator #f))
+   #:generator (lambda (c) (make-chaperone-contract-generator c))
+   #:tester (lambda (c) (make-chaperone-contract-tester c))))
 
-(define-struct make-flat-contract [ name first-order projection stronger ]
+(define-struct make-flat-contract [ name first-order projection stronger generator tester ]
   #:omit-define-syntaxes
   #:property prop:flat-contract
   (build-flat-contract-property
@@ -247,20 +270,23 @@
    #:first-order (lambda (c) (make-flat-contract-first-order c))
    #:projection (lambda (c) (make-flat-contract-projection c))
    #:stronger (lambda (a b) ((make-flat-contract-stronger a) a b))
-   #:generator #f))
+   #:generator (lambda (c) (make-flat-contract-generator c))
+   #:tester (lambda (c) (make-chaperone-contract-tester c))))
 
 (define ((build-contract mk default-name)
          #:name [name #f]
          #:first-order [first-order #f]
          #:projection [projection #f]
-         #:stronger [stronger #f])
+         #:stronger [stronger #f]
+         #:generator [generator #f]
+         #:tester [tester #f])
 
   (let* ([name (or name default-name)]
          [first-order (or first-order any?)]
          [projection (or projection (first-order-projection name first-order))]
          [stronger (or stronger as-strong?)])
 
-    (mk name first-order projection stronger)))
+    (mk name first-order projection stronger generator tester)))
 
 (define (as-strong? a b)
   (procedure-closure-contents-eq?
@@ -275,3 +301,4 @@
 
 (define make-flat-contract
   (build-contract make-make-flat-contract 'anonymous-flat-contract))
+

@@ -18,8 +18,10 @@ v4 todo:
 
 |#
 
+
 (require "guts.rkt"
          "opt.rkt"
+         "generator-base.rkt"
          racket/stxparam)
 (require (for-syntax racket/base)
          (for-syntax "opt-guts.rkt")
@@ -29,9 +31,12 @@ v4 todo:
          (for-syntax "arr-util.rkt"))
 
 (provide ->
+         base->?
          ->*
          ->d
          case->
+         base->-rngs/c
+         base->-doms/c
          unconstrained-domain->
          the-unsupplied-arg
          unsupplied-arg?
@@ -439,13 +444,55 @@ v4 todo:
        (= (length (base->-rngs/c that)) (length (base->-rngs/c this)))
        (andmap contract-stronger? (base->-rngs/c this) (base->-rngs/c that))))
 
+(define (->-generator ctc)
+  (let* ([rngs-gens (map contract-struct-generator (base->-rngs/c ctc))]
+         [doms-l (length (base->-doms/c ctc))]
+         [arg-names-start-index (get-arg-names-space doms-l)]
+         [arg-names (gen-arg-names arg-names-start-index doms-l)])
+    (if (member #f rngs-gens)
+        #f
+        (λ (n-tests size env)
+          (procedure-reduce-arity
+           (λ args
+             (let ([new-env env])
+               (apply values (map (λ (a-gen)
+                                    (a-gen 0 (- size 1) new-env))
+                                  rngs-gens))))
+           doms-l)))))
+
+(define (->-tester ctc)
+  ;(printf "doms/c: ~a rngs/c: ~a\n" (->-doms/c ctc) (->-rngs/c ctc))
+  (let* ([doms-gens (map contract-struct-generator (base->-doms/c ctc))]
+         [rngs-testers (map contract-struct-tester (base->-rngs/c ctc))])
+    ;(printf "doms-gens: ~a, rngs-testers: ~a\n" doms-gens rngs-testers)
+    (if (or (member #f doms-gens)
+            (member #f rngs-testers))
+        #f
+        (λ (f n-tests size env)
+          (for ([i (in-range n-tests)])
+            ;(printf "~a\n" doms-gens)
+            (let* ([gen-args (map (λ (g)
+                                    (g 0 size env))
+                                  doms-gens)]
+                   [result (apply f gen-args)]
+                   [result-c (value-contract result)])
+              ;(printf "result was ~a\n" result)
+              ;(printf "res-c ~a\n" (value-contract result))
+              (if result-c
+                  ((contract-struct-tester (value-contract result)) result 1 size env)
+                  #t)))))))
+
+
+
 (define-struct (chaperone-> base->) ()
   #:property prop:chaperone-contract
   (build-chaperone-contract-property
    #:projection (->-proj chaperone-procedure)
    #:name ->-name
    #:first-order ->-first-order
-   #:stronger ->-stronger?))
+   #:stronger ->-stronger?
+   #:generator ->-generator
+   #:tester ->-tester))
 
 (define-struct (impersonator-> base->) ()
   #:property prop:contract
@@ -453,7 +500,9 @@ v4 todo:
    #:projection (->-proj impersonate-procedure)
    #:name ->-name
    #:first-order ->-first-order
-   #:stronger ->-stronger?))
+   #:stronger ->-stronger?
+   #:generator ->-generator
+   #:tester ->-tester))
 
 (define (build--> name
                   pre post
@@ -578,9 +627,9 @@ v4 todo:
                         #f))]))))]))
 
 (define-for-syntax (maybe-a-method/name stx)
-   (if (syntax-parameter-value #'making-a-method)
-       (syntax-property stx 'method-arity-error #t)
-       stx))
+  (if (syntax-parameter-value #'making-a-method)
+      (syntax-property stx 'method-arity-error #t)
+      stx))
 
 ;; ->/proc/main : syntax -> (values syntax[contract-record] syntax[args/lambda-body] syntax[names])
 (define-for-syntax (->/proc/main stx)
@@ -1864,6 +1913,7 @@ v4 todo:
 (define (keywords-match mandatory-kwds optional-kwds val)
   (let-values ([(proc-mandatory proc-all) (procedure-keywords val)])
     (and ;; proc accepts all ctc's mandatory keywords
+
          (andmap (λ (kwd) (member kwd proc-all))
                  mandatory-kwds)
          ;; proc's mandatory keywords are still mandatory in ctc
@@ -1901,7 +1951,7 @@ v4 todo:
                     (format-keywords-error 'mandatory mandatory-keywords)
                     ", and "
                     (format-keywords-error 'optional optional-keywords))]))
-     
+
 (define (check-procedure/more val mtd? dom-length mandatory-kwds optional-kwds blame)
   (or (and (procedure? val)
            (procedure-accepts-and-more? val (if mtd? (+ dom-length 1) dom-length))
