@@ -4,9 +4,7 @@
 
 (provide rand
          rand-seed
-         rand-choice
-         permute
-         oneof)
+         rand-choice)
 
 
 ;; random generator
@@ -70,17 +68,3 @@
             (loop (- n (car nums))
                   (cdr nums)
                   (cdr thunks))])]))))
-
-; oneof :: [a] -> a
-; Randomly chooses one of the values from a given list
-(define (oneof a-list) 
-  (list-ref a-list (random (length a-list))))
-
-; fisher-yates shuffle
-(define (permute a-list)
-  (do ((v (list->vector a-list)) (n (length a-list) (- n 1)))
-      ((zero? n) (vector->list v))
-    (let* ((r (random n)) (t (vector-ref v r)))
-      (vector-set! v r (vector-ref v (- n 1)))
-      (vector-set! v (- n 1) t))))
-

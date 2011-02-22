@@ -1,5 +1,8 @@
 #lang racket/base
 
+;; A stripped down version of scheme/contract for use in
+;; the PLT code base where appropriate.
+
 (require "private/arrow.rkt"
          "private/arr-i.rkt"
          "private/base.rkt"
@@ -10,38 +13,41 @@
          "private/misc.rkt"
          "private/provide.rkt"
          "private/guts.rkt"
-         "private/prop.rkt"
-         "private/opters.rkt" ;; required for effect to install the opters
-         "private/opt.rkt")
+         "private/legacy.rkt"
+         "private/ds.rkt"
+         "private/opt.rkt"
+         "private/generator.rkt"
+         "private/generator-base.rkt"
+         "private/env.rkt")
 
 (provide
+ opt/c define-opt/c ;(all-from-out "private/opt.rkt")
+ (except-out (all-from-out "private/ds.rkt")
+             lazy-depth-to-look)
+
  (except-out (all-from-out "private/arrow.rkt")
              making-a-method
              procedure-accepts-and-more?
              check-procedure
              check-procedure/more
-             make-contracted-function
-             
-             contracted-function?
-             contracted-function-proc
-             contracted-function-ctc
+             base->-rngs/c
+             base->-doms/c
+             base->?
              make-contracted-function)
- (all-from-out "private/arr-i.rkt"
-               "private/box.rkt"
-               "private/hash.rkt"
-               "private/vector.rkt"
-               "private/struct.rkt")
- (except-out (all-from-out "private/base.rkt")
-             current-contract-region)
+ (all-from-out "private/arr-i.rkt")
+ (all-from-out "private/box.rkt")
+ (all-from-out "private/hash.rkt")
+ (all-from-out "private/vector.rkt")
+ (all-from-out "private/struct.rkt")
  (except-out (all-from-out "private/misc.rkt")
              check-between/c
              check-unary-between/c)
  (all-from-out "private/provide.rkt")
- 
- ;; from private/opt.rkt:
- opt/c define-opt/c
-
- ;; from private/guts.rkt
- has-contract?
- value-contract
- )
+ (all-from-out "private/base.rkt")
+ (all-from-out "private/legacy.rkt")
+ (except-out (all-from-out "private/guts.rkt")
+             check-flat-contract
+             check-flat-named-contract)
+ ;(all-from-out "private/generator.rkt")
+ (all-from-out "private/generator-base.rkt")
+ (all-from-out "private/env.rkt"))
