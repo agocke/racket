@@ -1,7 +1,6 @@
 #lang racket/base
 
-(require racket/contract
-         racket/contract/private/prop)
+(require racket/contract)
 
 (define (test-contract-generation ctc [monkey-with values] #:size [size 10])
   ;; generator : number[of tests] number[size bound] ??[env] -> any
@@ -9,9 +8,7 @@
   (define an-example (generator 10 size '()))
   (monkey-with (contract ctc an-example 'pos 'neg)))
   
-;(contract-struct-property (listof integer?))
 (test-contract-generation (listof integer?))
-(contract-struct-property (between/c 1 100))
 (test-contract-generation (between/c 1 100))
 (test-contract-generation (>=/c 0))
 (test-contract-generation (>/c 0))

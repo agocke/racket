@@ -10,7 +10,6 @@
          contract-struct-projection
          contract-struct-stronger?
          contract-struct-generator
-         contract-struct-property
          contract-struct-tester
 
          prop:flat-contract
