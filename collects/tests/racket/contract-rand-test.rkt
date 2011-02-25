@@ -10,8 +10,10 @@
   
 (test-contract-generation (listof integer?))
 (test-contract-generation (between/c 1 100))
+;(test-contract-generation (flat-contract char?))
 (test-contract-generation (>=/c 0))
-(test-contract-generation (>/c 0))
+(test-contract-generation (<=/c 0))
+;(test-contract-generation (>/c 0))
 (test-contract-generation (string-len/c 10))
 (test-contract-generation (vector-immutableof negative?))
 coerce-contract
