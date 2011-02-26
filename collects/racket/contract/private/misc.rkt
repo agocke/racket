@@ -738,6 +738,39 @@
      (build-compound-type-name 'not/c ctc)
      (λ (x) (not (pred x))))))
 
+(define (listof-generator el-ctc)
+  (let* ([el-c (coerce-contract el-ctc el-ctc)]
+         [el-gen (contract-struct-generator el-c)])
+    
+    (λ (n-tests size env)
+      (let* ([rem-size (box size)])
+        
+        (define (l-gen l-size)
+          (cond
+            [(or (<= l-size 0)
+                 (<= (unbox rem-size) 0)) (list)]
+            [else (let* ([el-size (rand (unbox rem-size))])
+                    (set-box! rem-size (- (unbox rem-size) el-size))
+                    (cons (el-gen 0 el-size env)
+                          (l-gen (- l-size 1))))]))
+        
+        
+        (rand-choice
+         [1/4 (list)]
+         [1/4 (begin
+                (set-box! rem-size (- size 2))
+                (l-gen 2))]
+         [1/4 (let* ([l-size (rand (min 10 (+ size 1)))])
+                (set-box! rem-size (- size l-size))
+                (l-gen l-size))]
+         [else (let* ([l-size (rand (+ size 1))])
+                 (set-box! rem-size (- size l-size))
+                 (l-gen l-size))])))))
+
+(define (listof-tester el-ctc)
+  (λ (f n-tests size env)
+    #t))
+
 (define-syntax (*-listof stx)
   (syntax-case stx ()
     [(_ predicate? type-name name)
@@ -790,39 +823,6 @@
         (make-listof/c element-ctc))))
 
 
-(define (listof-generator el-ctc)
-  (let* ([el-c (coerce-contract el-ctc el-ctc)]
-         [el-gen (contract-struct-generator el-c)])
-    
-    (λ (n-tests size env)
-      (let* ([rem-size (box size)])
-        
-        (define (l-gen l-size)
-          (cond
-            [(or (<= l-size 0)
-                 (<= (unbox rem-size) 0)) (list)]
-            [else (let* ([el-size (rand (unbox rem-size))])
-                    (set-box! rem-size (- (unbox rem-size) el-size))
-                    (cons (el-gen 0 el-size env)
-                          (l-gen (- l-size 1))))]))
-        
-        
-        (rand-choice
-         [1/4 (list)]
-         [1/4 (begin
-                (set-box! rem-size (- size 2))
-                (l-gen 2))]
-         [1/4 (let* ([l-size (rand (min 10 (+ size 1)))])
-                (set-box! rem-size (- size l-size))
-                (l-gen l-size))]
-         [else (let* ([l-size (rand (+ size 1))])
-                 (set-box! rem-size (- size l-size))
-                 (l-gen l-size))])))))
-
-(define (listof-tester el-ctc)
-  (λ (f n-tests size env)
-    #t))
-
 ;(*-immutableof list? map andmap list listof))
 
 (define-struct listof-flat/c (element-ctc)
@@ -831,7 +831,7 @@
   (build-flat-contract-property
    #:name 
    (λ (ctc)
-     (build-compound-type-name 'listof (listof-flat/c-element-ctc ctc)))
+     (build-compound-type-name 'listof (object-name (listof-flat/c-element-ctc ctc))))
    #|
     #:projection
     (λ (ctc)
@@ -872,7 +872,7 @@
   (build-contract-property
    #:name 
    (λ (ctc)
-     (build-compound-type-name 'listof (listof/c-element-ctc ctc)))
+     (build-compound-type-name 'listof (object-name (listof/c-element-ctc ctc))))
    #:projection
    (λ (ctc)
      (let* ([el-ctc (listof/c-element-ctc ctc)]
