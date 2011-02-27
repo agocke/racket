@@ -797,21 +797,25 @@
              (make-flat-contract
               #:name ctc-name
               #:first-order fo-check
-              #:projection (ho-check (λ (p v) (for-each p v) v)))]
+              #:projection (ho-check (λ (p v) (for-each p v) v))
+              #:generator (listof-generator ctc))]
             [(chaperone-contract? ctc)
              (make-chaperone-contract
               #:name ctc-name
               #:first-order fo-check
-              #:projection (ho-check (λ (p v) (map p v))))]
+              #:projection (ho-check (λ (p v) (map p v)))
+              #:generator (listof-generator ctc))]
             [else
              (make-contract
               #:name ctc-name
               #:first-order fo-check
-              #:projection (ho-check (λ (p v) (map p v))))]))))]))
+              #:projection (ho-check (λ (p v) (map p v)))
+              )]))))]))
 
-;(define listof-func (*-listof list? list listof))
-;(define/subexpression-pos-prop (listof x) (listof-func x))
+(define listof-func (*-listof list? list listof))
+(define/subexpression-pos-prop (listof x) (listof-func x))
 
+#|
 (define (listof element-ctc)
   ;  (printf "bla")
   (if (flat-contract? element-ctc)
@@ -821,7 +825,7 @@
       (begin 
         ;        (printf "non-flat\n")
         (make-listof/c element-ctc))))
-
+|#
 
 ;(*-immutableof list? map andmap list listof))
 
