@@ -767,9 +767,11 @@
                  (set-box! rem-size (- size l-size))
                  (l-gen l-size))])))))
 
+#|
 (define (listof-tester el-ctc)
   (λ (f n-tests size env)
     #t))
+|#
 
 (define-syntax (*-listof stx)
   (syntax-case stx ()
@@ -862,10 +864,13 @@
    (λ (ctc)
      ;     #f)
      (listof-generator (listof-flat/c-element-ctc ctc)))
+   #| 
    #:tester
    (λ (ctc)
      ;     #f)))
-     (listof-tester (listof-flat/c-element-ctc ctc)))))
+     (listof-tester (listof-flat/c-element-ctc ctc)))
+   |# 
+   ))
 
 
 
@@ -899,55 +904,12 @@
    (λ (ctc)
      ;     #f)
      (listof-generator (listof/c-element-ctc ctc)))
+#|
    #:tester
    (λ (ctc)
      ;     #f)))
-     (listof-tester (listof/c-element-ctc ctc)))))
-
-
-
-#|
- 
- 
- 
- 
- (define (listof-generator el-ctc)
-   (λ (ctc)
-     (let* ([el-gen (contract-struct-generator el-ctc)])
-       
-       (λ (n-tests size env)
-         (let* ([rem-size (box size)])
-           (define (l-gen l-size)
-             (cond
-               [(<= l-size 0) (list)]
-               [else (let* ([el-size (rand (unbox rem-size))])
-                       (set-box! rem-size (- (unbox rem-size) el-size))
-                       (cons (el-gen 0 el-size env)
-                             (l-gen (- l-size 1))))]))
-           
- 
-           (rand-choice
-            [1/4 (list)]
-            [1/4 (begin
-                   (set-box! rem-size (- size 2))
-                   (l-gen 2))]
-            [1/4 (let* ([l-size (rand (min 10 size))])
-                   (set-box! rem-size (- size l-size))
-                   (l-gen l-size))]
-            [else (let* ([l-size (rand size)])
-                    (set-box! rem-size (- size l-size))
-                    (l-gen l-size))]))))))
-               
-               
-                 
- (define dummy-tester/generator
-   (λ (ctc)
-     #f))
- 
- 
- (define listof
-   (*-immutableof list? map andmap list listof))
- |#
+     (listof-tester (listof/c-element-ctc ctc)))
+     |#))
 
 (define (non-empty-list? x) (and (pair? x) (list? (cdr x))))
 (define non-empty-listof-func (*-listof non-empty-list? non-empty-list non-empty-listof))

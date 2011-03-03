@@ -459,7 +459,7 @@ v4 todo:
                                     (a-gen 0 (- size 1) new-env))
                                   rngs-gens))))
            doms-l)))))
-
+#|
 (define (->-tester ctc)
   ;(printf "doms/c: ~a rngs/c: ~a\n" (->-doms/c ctc) (->-rngs/c ctc))
   (let* ([doms-gens (map contract-struct-generator (base->-doms/c ctc))]
@@ -481,6 +481,7 @@ v4 todo:
               (if result-c
                   ((contract-struct-tester (value-contract result)) result 1 size env)
                   #t)))))))
+|#
 
 
 
@@ -492,7 +493,7 @@ v4 todo:
    #:first-order ->-first-order
    #:stronger ->-stronger?
    #:generator ->-generator
-   #:tester ->-tester))
+   #| #:tester ->-tester |#))
 
 (define-struct (impersonator-> base->) ()
   #:property prop:contract
@@ -502,7 +503,7 @@ v4 todo:
    #:first-order ->-first-order
    #:stronger ->-stronger?
    #:generator ->-generator
-   #:tester ->-tester))
+   #| #:tester ->-tester |#))
 
 (define (build--> name
                   pre post
