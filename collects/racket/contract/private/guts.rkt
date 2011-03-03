@@ -326,11 +326,13 @@
    #:generator (λ (ctc)
                  (let ([fn (predicate-contract-pred ctc)])
                    (find-generator fn (contract-name ctc))))
+#|
    #:tester (λ (ctc)
               (let ([pred (predicate-contract-pred ctc)])
                 (λ (val n-tests size env)
                   (unless (pred val)
-                    (error "Contract Generator Error 1")))))))
+                    (error "Contract Generator Error 1")))))
+   |#))
 
 (define (check-flat-named-contract predicate) (coerce-flat-contract 'flat-named-contract predicate))
 (define (check-flat-contract predicate) (coerce-flat-contract 'flat-contract predicate))
