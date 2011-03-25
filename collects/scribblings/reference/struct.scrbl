@@ -3,6 +3,7 @@
           (for-label racket/struct-info))
 
 @(define struct-eval (make-base-eval))
+@(define struct-copy-eval (make-base-eval))
 
 @title[#:tag "structures" #:style 'toc]{Structures}
 
@@ -432,7 +433,32 @@ structure instance is created.
 
 The result of @racket[struct-expr] can be an instance of a sub-type of
 @racket[id], but the resulting copy is an immediate instance of
-@racket[id] (not the sub-type).}
+@racket[id] (not the sub-type).
+
+@examples[
+#:eval struct-copy-eval
+(struct fish (color weight) #:transparent)
+(define marlin (fish 'orange-and-white 11))
+(define dory (struct-copy fish marlin
+                          [color 'blue]))
+dory
+             
+(struct shark fish (weeks-since-eating-fish) #:transparent)
+(define bruce (shark 'grey 110 3))
+(define chum (struct-copy shark bruce
+                          [weight #:parent fish 90]
+                          [weeks-since-eating-fish 0]))
+chum
+
+(code:comment "subtypes can be copied as if they were supertypes,")
+(code:comment "but the result is an instance of the supertype")
+(define not-really-chum
+  (struct-copy fish bruce
+               [weight 90]))
+not-really-chum
+]
+
+}
 
 @;------------------------------------------------------------------------
 @section[#:tag "structutils"]{Structure Utilities}
@@ -726,3 +752,4 @@ identifiers. The two subsets correspond to @racket[#:auto] fields.}
 @; ----------------------------------------------------------------------
 
 @close-eval[struct-eval]
+@close-eval[struct-copy-eval]
