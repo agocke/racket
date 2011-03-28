@@ -1,13 +1,18 @@
 #lang racket/base
 
 (require (for-syntax racket/base
-                     "helpers.rkt"
-                     "opt-guts.rkt")
+                     "helpers.rkt")
          racket/promise
+<<<<<<< HEAD
          "opt.rkt"
+         "guts.rkt"
+         "rand.rkt"
+         "generate.rkt")
+=======
          "prop.rkt"
          "blame.rkt"
          "guts.rkt")
+>>>>>>> refactor contracts to move the opters to their own file
 
 (provide flat-rec-contract
          flat-murec-contract
@@ -282,123 +287,6 @@
    #:first-order
    (λ (ctc) (flat-or/c-pred ctc))))
 
-;;
-;; or/c opter
-;;
-(define/opter (or/c opt/i opt/info stx)
-  ;; FIXME code duplication
-  (define (opt/or-unknown uctc)
-    (let* ((lift-var (car (generate-temporaries (syntax (lift)))))
-           (partial-var (car (generate-temporaries (syntax (partial))))))
-      (values
-       (with-syntax ((partial-var partial-var)
-                     (lift-var lift-var)
-                     (uctc uctc)
-                     (val (opt/info-val opt/info)))
-         (syntax (partial-var val)))
-       (list (cons lift-var 
-                   ;; FIXME needs to get the contract name somehow
-                   (with-syntax ((uctc uctc))
-                     (syntax (coerce-contract 'opt/c uctc)))))
-       null
-       (list (cons
-              partial-var
-              (with-syntax ((lift-var lift-var)
-                            (blame (opt/info-blame opt/info)))
-                (syntax ((contract-projection lift-var) blame)))))
-       #f
-       lift-var
-       (list #f)
-       null)))
-  
-  (define (opt/or-ctc ps)
-    (let ((lift-from-hos null)
-          (superlift-from-hos null)
-          (partial-from-hos null))
-      (let-values ([(opt-ps lift-ps superlift-ps partial-ps stronger-ribs hos ho-ctc)
-                    (let loop ([ps ps]
-                               [next-ps null]
-                               [lift-ps null]
-                               [superlift-ps null]
-                               [partial-ps null]
-                               [stronger-ribs null]
-                               [hos null]
-                               [ho-ctc #f])
-                      (cond
-                        [(null? ps) (values next-ps
-                                            lift-ps
-                                            superlift-ps
-                                            partial-ps
-                                            stronger-ribs
-                                            (reverse hos)
-                                            ho-ctc)]
-                        [else
-                         (let-values ([(next lift superlift partial flat _ this-stronger-ribs)
-                                       (opt/i opt/info (car ps))])
-                           (if flat
-                               (loop (cdr ps)
-                                     (cons flat next-ps)
-                                     (append lift-ps lift)
-                                     (append superlift-ps superlift)
-                                     (append partial-ps partial)
-                                     (append this-stronger-ribs stronger-ribs)
-                                     hos
-                                     ho-ctc)
-                               (if (< (length hos) 1)
-                                   (loop (cdr ps)
-                                         next-ps
-                                         (append lift-ps lift)
-                                         (append superlift-ps superlift)
-                                         (append partial-ps partial)
-                                         (append this-stronger-ribs stronger-ribs)
-                                         (cons (car ps) hos)
-                                         next)
-                                   (loop (cdr ps)
-                                         next-ps
-                                         lift-ps
-                                         superlift-ps
-                                         partial-ps
-                                         stronger-ribs
-                                         (cons (car ps) hos)
-                                         ho-ctc))))]))])
-        (with-syntax ((next-ps
-                       (with-syntax (((opt-p ...) (reverse opt-ps)))
-                         (syntax (or opt-p ...)))))
-          (values
-           (cond
-             [(null? hos) 
-              (with-syntax ([val (opt/info-val opt/info)]
-                            [blame (opt/info-blame opt/info)])
-                (syntax
-                 (if next-ps 
-                     val
-                     (raise-blame-error blame
-                                        val
-                                        "none of the branches of the or/c matched"))))]
-             [(= (length hos) 1) (with-syntax ((ho-ctc ho-ctc))
-                                   (syntax
-                                    (if next-ps val ho-ctc)))]
-             ;; FIXME something's not right with this case.
-             [(> (length hos) 1)
-              (let-values ([(next-hos lift-hos superlift-hos partial-hos _ __ stronger-hos stronger-vars-hos)
-                            (opt/or-unknown stx)])
-                (set! lift-from-hos lift-hos)
-                (set! superlift-from-hos superlift-hos)
-                (set! partial-from-hos partial-hos)
-                (with-syntax ((next-hos next-hos))
-                  (syntax
-                   (if next-ps val next-hos))))])
-           (append lift-ps lift-from-hos)
-           (append superlift-ps superlift-from-hos)
-           (append partial-ps partial-from-hos)
-           (if (null? hos) (syntax next-ps) #f)
-           #f
-           stronger-ribs)))))
-  
-  (syntax-case stx (or/c)
-    [(or/c p ...)
-     (opt/or-ctc (syntax->list (syntax (p ...))))]))
-
 (define false/c #f)
 
 (define/final-prop (string-len/c n)
@@ -527,7 +415,20 @@
             [m (between/c-high ctc)])
         (λ (x) 
            (and (real? x)
-                (<= n x m)))))))
+                (<= n x m)))))
+   #:generate
+   (λ (ctc)
+      (λ (fuel)
+         (let* ([max-n 2147483647]
+                [min-n -2147483648]
+                [upper (if (> (between/c-high ctc) max-n)
+                         max-n
+                         (between/c-high ctc))]
+                [lower (if (< (between/c-low ctc) min-n)
+                         min-n
+                         (between/c-low ctc))])
+           (+ (random (- upper lower))
+              lower))))))
 
 (define-syntax (check-unary-between/c stx)
   (syntax-case stx ()
@@ -555,141 +456,32 @@
   (check-between/c x y)
   (make-between/c x y))
 
-;;
-;; between/c opter helper
-;;
-
-
-
-;;
-;; between/c opters
-;;
-;; note that the checkers are used by both optimized and normal contracts.
-;;
-(define/opter (between/c opt/i opt/info stx)
-  (syntax-case stx (between/c)
-    [(between/c low high) 
-     (let*-values ([(lift-low lifts1) (lift/binding #'low 'between-low empty-lifts)]
-                   [(lift-high lifts2) (lift/binding #'high 'between-high lifts1)])
-       (with-syntax ([n lift-low]
-                     [m lift-high])
-         (let ([lifts3 (lift/effect #'(check-between/c n m) lifts2)])
-           (with-syntax ((val (opt/info-val opt/info))
-                         (ctc (opt/info-contract opt/info))
-                         (blame (opt/info-blame opt/info))
-                         (this (opt/info-this opt/info))
-                         (that (opt/info-that opt/info)))
-             (values
-              (syntax (if (and (number? val) (<= n val m)) 
-                          val
-                          (raise-blame-error
-                           blame
-                           val
-                           "expected <~a>, given: ~e"
-                           (contract-name ctc)
-                           val)))
-              lifts3
-              null
-              null
-              (syntax (and (number? val) (<= n val m)))
-              #f
-              (list (new-stronger-var
-                     lift-low
-                     (λ (this that)
-                       (with-syntax ([this this]
-                                     [that that])
-                         (syntax (<= that this)))))
-                    (new-stronger-var
-                     lift-high
-                     (λ (this that)
-                       (with-syntax ([this this]
-                                     [that that])
-                         (syntax (<= this that)))))))))))]))
-
-(define-for-syntax (single-comparison-opter opt/info stx check-arg comparison arg)
-  (with-syntax ([comparison comparison])
-    (let*-values ([(lift-low lifts2) (lift/binding arg 'single-comparison-val empty-lifts)])
-      (with-syntax ([m lift-low])
-        (let ([lifts3 (lift/effect (check-arg #'m) lifts2)])
-          (with-syntax ((val (opt/info-val opt/info))
-                        (ctc (opt/info-contract opt/info))
-                        (blame (opt/info-blame opt/info))
-                        (this (opt/info-this opt/info))
-                        (that (opt/info-that opt/info)))
-            (values
-             (syntax 
-              (if (and (real? val) (comparison val m)) 
-                  val
-                  (raise-blame-error
-                   blame
-                   val
-                   "expected <~a>, given: ~e"
-                   (contract-name ctc)
-                   val)))
-             lifts3
-             null
-             null
-             (syntax (and (number? val) (comparison val m)))
-             #f
-             (list (new-stronger-var
-                    lift-low
-                    (λ (this that)
-                      (with-syntax ([this this]
-                                    [that that])
-                        (syntax (comparison this that)))))))))))))
-
-(define/opter (>=/c opt/i opt/info stx)
-  (syntax-case stx (>=/c)
-    [(>=/c low)
-     (single-comparison-opter 
-      opt/info
-      stx
-      (λ (m) (with-syntax ([m m])
-               #'(check-unary-between/c '>=/c m)))
-      #'>=
-      #'low)]))
-
-(define/opter (<=/c opt/i opt/info stx)
-  (syntax-case stx (<=/c)
-    [(<=/c high)
-     (single-comparison-opter 
-      opt/info
-      stx
-      (λ (m) (with-syntax ([m m])
-               #'(check-unary-between/c '<=/c m)))
-      #'<=
-      #'high)]))
-
-(define/opter (>/c opt/i opt/info stx)
-  (syntax-case stx (>/c)
-    [(>/c low)
-     (single-comparison-opter 
-      opt/info
-      stx
-      (λ (m) (with-syntax ([m m])
-               #'(check-unary-between/c '>/c m)))
-      #'>
-      #'low)]))
-
-(define/opter (</c opt/i opt/info stx)
-  (syntax-case stx (</c)
-    [(</c high)
-     (single-comparison-opter 
-      opt/info
-      stx
-      (λ (m) (with-syntax ([m m])
-               #'(check-unary-between/c '</c m)))
-      #'<
-      #'high)]))
 
 (define (</c x)
   (flat-named-contract
    `(</c ,x)
-   (λ (y) (and (real? y) (< y x)))))
+   (λ (y) (and (real? y) (< y x)))
+   (λ (fuel)
+      (let* ([max-n 2147483647]
+             [min-n -2147483648]
+             [upper (if (> x max-n)
+                      max-n
+                      x)])
+        (+ (random (- upper min-n))
+           min-n)))))
+
 (define (>/c x)
   (flat-named-contract
-   `(>/c ,x)
-   (λ (y) (and (real? y) (> y x)))))
+    `(>/c ,x)
+    (λ (y) (and (real? y) (> y x)))
+    (λ (fuel) 
+       (let* ([max-n 2147483647]
+              [min-n -2147483648]
+              [lower (if (< x min-n)
+                       min-n
+                       x)])
+         (+ (random (- max-n lower))
+            lower)))))
 
 (define natural-number/c
   (flat-named-contract
@@ -726,6 +518,19 @@
      (build-compound-type-name 'not/c ctc)
      (λ (x) (not (pred x))))))
 
+(define (listof-generate elem-ctc)
+  (λ (fuel)
+     (define (mk-rand-list so-far)
+       (rand-choice
+         [1/5 so-far]
+         [else (mk-rand-list (cons (generate/direct elem-ctc fuel)
+                                   so-far))]))
+     (mk-rand-list (list))))
+
+(define (listof-exercise el-ctc)
+  (λ (f n-tests size env)
+    #t))
+
 (define-syntax (*-listof stx)
   (syntax-case stx ()
     [(_ predicate? type-name name)
@@ -752,24 +557,122 @@
              (make-flat-contract
               #:name ctc-name
               #:first-order fo-check
-              #:projection (ho-check (λ (p v) (for-each p v) v)))]
+              #:projection (ho-check (λ (p v) (for-each p v) v))
+              #:generate (listof-generate ctc))]
             [(chaperone-contract? ctc)
              (make-chaperone-contract
               #:name ctc-name
               #:first-order fo-check
-              #:projection (ho-check (λ (p v) (map p v))))]
+              #:projection (ho-check (λ (p v) (map p v)))
+              #:generate (listof-generate ctc))]
             [else
              (make-contract
               #:name ctc-name
               #:first-order fo-check
-              #:projection (ho-check (λ (p v) (map p v))))]))))]))
+              #:projection (ho-check (λ (p v) (map p v)))
+              )]))))]))
 
 (define listof-func (*-listof list? list listof))
 (define/subexpression-pos-prop (listof x) (listof-func x))
 
+#|
+(define (listof element-ctc)
+  ;  (printf "bla")
+  (if (flat-contract? element-ctc)
+      (begin 
+        ;        (printf "flat\n")
+        (make-listof-flat/c element-ctc))
+      (begin 
+        ;        (printf "non-flat\n")
+        (make-listof/c element-ctc))))
+|#
+
+;(*-immutableof list? map andmap list listof))
+
+(define-struct listof-flat/c (element-ctc)
+  #:omit-define-syntaxes
+  #:property prop:flat-contract
+  (build-flat-contract-property
+   #:name 
+   (λ (ctc)
+     (build-compound-type-name 'listof (object-name (listof-flat/c-element-ctc ctc))))
+   #|
+    #:projection
+    (λ (ctc)
+      ;     (let* ([content-pred? (listof-flat/c-element-ctc ctc)])
+      (let* ([content-ctc (listof-flat/c-element-ctc ctc)]
+             [content-pred? (flat-contract-predicate ctc)])
+        (λ (blame)
+          (λ (x)
+            (unless (and (list? x) (andmap content-pred? x))
+              (raise-blame-error
+                 blame
+                 x
+                 "expected <~a>, given: ~e"
+                 'type-name
+                 x))
+            #t))))
+ |#
+   #:first-order
+   (λ (ctc)
+     (let ([content-pred? (listof-flat/c-element-ctc ctc)])
+       (λ (val)
+         (and (list? val) (andmap content-pred? val)))))
+   #:generate
+   (λ (ctc)
+     ;     #f)
+     (listof-generate (listof-flat/c-element-ctc ctc)))
+   #:exercise
+   (λ (ctc)
+     ;     #f)))
+     (listof-exercise (listof-flat/c-element-ctc ctc)))))
+
+
+
+
+(define-struct listof/c (element-ctc)
+  #:omit-define-syntaxes
+  #:property prop:contract
+  (build-contract-property
+   #:name 
+   (λ (ctc)
+     (build-compound-type-name 'listof (object-name (listof/c-element-ctc ctc))))
+   #:projection
+   (λ (ctc)
+     (let* ([el-ctc (listof/c-element-ctc ctc)]
+            [proj (contract-projection el-ctc)])
+       (λ (blame)
+         (let ([p-app (proj blame)])
+           (λ (val)
+             (unless (list? val)
+               (raise-blame-error
+                blame
+                val
+                "expected <~a>, given: ~e"
+                'type-name
+                val))
+             (map p-app val))))))
+   #:first-order
+   (λ (ctc)
+     list?)
+   #:generate
+   (λ (ctc)
+     ;     #f)
+     (listof-generate (listof/c-element-ctc ctc)))
+   #:exercise
+   (λ (ctc)
+     ;     #f)))
+     (listof-exercise (listof/c-element-ctc ctc)))))
+
 (define (non-empty-list? x) (and (pair? x) (list? (cdr x))))
 (define non-empty-listof-func (*-listof non-empty-list? non-empty-list non-empty-listof))
 (define/subexpression-pos-prop (non-empty-listof a) (non-empty-listof-func a))
+
+<<<<<<< HEAD
+
+
+
+
 
 ;;
 ;; cons/c opter
@@ -839,6 +742,8 @@
            (procedure-arity-includes? pred 1))))
 
 
+=======
+>>>>>>> refactor contracts to move the opters to their own file
 (define cons/c-main-function
   (λ (car-c cdr-c)
     (let* ([ctc-car (coerce-contract 'cons/c car-c)]
@@ -875,49 +780,6 @@
            #:projection (ho-check (λ (v a d) (cons a d))))]))))
 
 (define/subexpression-pos-prop (cons/c a b) (cons/c-main-function a b))
-
-;;
-;; cons/c opter
-;;
-(define/opter (cons/c opt/i opt/info stx)
-  (define (opt/cons-ctc hdp tlp)
-    (let-values ([(next-hdp lifts-hdp superlifts-hdp partials-hdp flat-hdp unknown-hdp stronger-ribs-hd)
-                  (opt/i opt/info hdp)]
-                 [(next-tlp lifts-tlp superlifts-tlp partials-tlp flat-tlp unknown-tlp stronger-ribs-tl)
-                  (opt/i opt/info tlp)])
-      (with-syntax ((check (with-syntax ((val (opt/info-val opt/info)))
-                             (syntax (pair? val)))))
-        (values
-         (with-syntax ((val (opt/info-val opt/info))
-                       (ctc (opt/info-contract opt/info))
-                       (blame (opt/info-blame opt/info))
-                       (next-hdp next-hdp)
-                       (next-tlp next-tlp))
-           (syntax (if check
-                       (cons (let ((val (car val))) next-hdp)
-                             (let ((val (cdr val))) next-tlp))
-                       (raise-blame-error
-                        blame
-                        val
-                        "expected <~a>, given: ~e"
-                        (contract-name ctc)
-                        val))))        
-         (append lifts-hdp lifts-tlp) 
-         (append superlifts-hdp superlifts-tlp)
-         (append partials-hdp partials-tlp)
-         (if (and flat-hdp flat-tlp)
-             (with-syntax ((val (opt/info-val opt/info))
-                           (flat-hdp flat-hdp)
-                           (flat-tlp flat-tlp))
-               (syntax (if (and check
-                                (let ((val (car val))) flat-hdp)
-                                (let ((val (cdr val))) flat-tlp)) #t #f)))
-             #f)
-         #f
-         (append stronger-ribs-hd stronger-ribs-tl)))))
-  
-  (syntax-case stx (cons/c)
-    [(_ hdp tlp) (opt/cons-ctc #'hdp #'tlp)]))
 
 (define/subexpression-pos-prop (list/c . args)
   (let* ([args (coerce-contracts 'list/c args)])

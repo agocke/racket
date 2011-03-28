@@ -1,6 +1,6 @@
 #lang racket/base
 
-;; A stripped down version of scheme/contract for use in
+;; A stripped down version of racket/contract for use in
 ;; the PLT code base where appropriate.
 
 (require "private/arrow.rkt"
@@ -16,9 +16,8 @@
          "private/legacy.rkt"
          "private/ds.rkt"
          "private/opt.rkt"
-         "private/generate.rkt"
-         "private/generate-base.rkt"
-         "private/env.rkt")
+         "private/blame.rkt"
+         "private/prop.rkt")
 
 (provide
  opt/c define-opt/c ;(all-from-out "private/opt.rkt")
@@ -30,9 +29,6 @@
              procedure-accepts-and-more?
              check-procedure
              check-procedure/more
-             base->-rngs/c
-             base->-doms/c
-             base->?
              make-contracted-function)
  (all-from-out "private/arr-i.rkt")
  (all-from-out "private/box.rkt")
@@ -48,5 +44,6 @@
  (except-out (all-from-out "private/guts.rkt")
              check-flat-contract
              check-flat-named-contract)
- (all-from-out "private/generate-base.rkt")
- (all-from-out "private/env.rkt"))
+ 
+ (except-out (all-from-out "private/blame.rkt") make-blame)
+ (all-from-out "private/prop.rkt"))
