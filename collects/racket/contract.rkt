@@ -4,11 +4,17 @@
          racket/contract/regions
          "contract/private/basic-opters.rkt"
          "contract/base.rkt"
-         "private/define-struct.rkt"
-         "contract/private/generate.rkt")
+         "contract/private/legacy.rkt"
+         "contract/private/ds.rkt"
+         "contract/private/opt.rkt"
+         "private/define-struct.rkt")
 
 (provide (all-from-out "contract/base.rkt")
- (except-out (all-from-out racket/contract/exists) ∀∃?)
- (all-from-out racket/contract/regions)
- contract-generate)
+         (except-out (all-from-out racket/contract/exists) ∀∃?)
+         (all-from-out racket/contract/regions)
+
+         (all-from-out "contract/private/legacy.rkt")
+         opt/c define-opt/c ;(all-from-out "private/opt.rkt")
+         (except-out (all-from-out "contract/private/ds.rkt")
+                     lazy-depth-to-look))
 
