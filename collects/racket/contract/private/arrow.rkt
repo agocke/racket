@@ -451,17 +451,16 @@ v4 todo:
          [arg-names (gen-arg-names arg-names-start-index doms-l)])
     (if (member #f rngs-gens)
         #f
-        (λ (n-tests size env)
+        (λ (n-tests fuel env)
           (procedure-reduce-arity
            (λ args
              (let ([new-env env])
                (apply values (map (λ (a-gen)
-                                    (a-gen 0 (- size 1) new-env))
+                                    (a-gen 0 (- fuel 1) new-env))
                                   rngs-gens))))
            doms-l)))))
 #|
-(define (->-tester ctc)
-  ;(printf "doms/c: ~a rngs/c: ~a\n" (->-doms/c ctc) (->-rngs/c ctc))
+(define (->-exercise ctc)
   (let* ([doms-gens (map contract-struct-generator (base->-doms/c ctc))]
          [rngs-testers (map contract-struct-tester (base->-rngs/c ctc))])
     ;(printf "doms-gens: ~a, rngs-testers: ~a\n" doms-gens rngs-testers)
