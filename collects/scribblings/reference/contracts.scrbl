@@ -1,11 +1,12 @@
 #lang scribble/doc
 @(require "mz.rkt")
-@(require (for-label syntax/modcollapse))
+@(require (for-label syntax/modcollapse
+                     racket/contract/parametric))
 
 @(define contract-eval
    (lambda ()
      (let ([the-eval (make-base-eval)])
-       (the-eval '(require racket/contract))
+       (the-eval '(require racket/contract racket/contract/parametric))
        the-eval)))
 
 @title[#:tag "contracts" #:style 'toc]{Contracts}
@@ -65,11 +66,8 @@ Constructs a @tech{flat contract} from @racket[predicate]. A value
 satisfies the contract if the predicate returns a true value.}
 
 
-@defproc[(flat-named-contract [type-name any/c] [predicate (or/c flat-contract? (any/c . -> . any))] [#:generate generator (-> contract (-> int? 'a-val))])
+@defproc[(flat-named-contract [type-name any/c] [predicate (or/c flat-contract? (any/c . -> . any))])
          flat-contract?]{
-
-The generator argument adds a generator for the flat-named-contract. See 
-@racket[contract-generate] for more information.
 
 On predicates like @racket[flat-contract], but the first argument must be the
 (quoted) name of a contract used for error reporting. 
@@ -787,6 +785,38 @@ be blamed using the above contract:
   A predicate to determine whether @racket[v] is 
   @racket[the-unsupplied-arg].
 }
+
+
+@subsection[#:tag "parametric-contracts"]{Parametric Contracts}
+
+@defmodule[racket/contract/parametric]
+
+@defform[(parametric/c (x ...) c)]{
+
+Creates a contract for parametric polymorphic functions.  Each function is
+protected by @racket[c], where each @racket[x] is bound in @racket[c] and refers
+to a polymorphic type that is instantiated each time the function is applied.
+
+At each application of a function, the @racket[parametric/c] contract constructs
+a new opaque wrapper for each @racket[x]; values flowing into the polymorphic
+function (i.e. values protected by some @racket[x] in negative position with
+respect to @racket[parametric/c]) are wrapped in the corresponding opaque
+wrapper.  Values flowing out of the polymorphic function (i.e. values protected
+by some @racket[x] in positive position with respect to @racket[parametric/c])
+are checked for the appropriate wrapper.  If they have it, they are unwrapped;
+if they do not, a contract violation is signalled.
+
+@examples[#:eval (contract-eval)
+(define/contract (check x y) (parametric/c [X] (boolean? X . -> . X))
+  (if (or (not x) (equal? y 'surprise))
+      'invalid
+      y))
+(check #t 'ok)
+(check #f 'ignored)
+(check #t 'surprise)
+]
+}
+
 
 @; ------------------------------------------------------------------------
 
@@ -1843,12 +1873,3 @@ defines the @racket[bst/c] contract that checks the binary
 search tree invariant. Removing the @racket[-opt/c] also
 makes a binary search tree contract, but one that is
 (approximately) 20 times slower.}
-
-@section{Random generation}
-
-@defproc[(contract-generate [ctc contract?] [fuel int?] any/c)]{
-Attempts to randomly generate a value which will match the contract. The fuel
-argument limits the depth that the argument generation can go and thus the
-memory used. In order to know which contracts to generate, it may be necessary
-to add a generator for the generate keyword argument in @racket[struct]
-}
