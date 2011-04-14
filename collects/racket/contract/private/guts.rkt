@@ -3,15 +3,12 @@
 (require "helpers.rkt"
          "blame.rkt"
          "prop.rkt"
-         "rand.rkt"
-         "generate-base.rkt"
          racket/pretty)
 
 (require (for-syntax racket/base
                      "helpers.rkt"))
 
-(provide 
-         coerce-contract
+(provide coerce-contract
          coerce-contracts
          coerce-flat-contract
          coerce-flat-contracts
@@ -25,7 +22,6 @@
          flat-contract
          flat-contract-predicate
          flat-named-contract
-         build-flat-contract
          
          build-compound-type-name
          
@@ -174,7 +170,7 @@
   (cond
     [(contract-struct? x) x]
     [(and (procedure? x) (procedure-arity-includes? x 1)) 
-     (make-predicate-contract (or (object-name x) '???) x (make-generate-ctc-fail))]
+     (make-predicate-contract (or (object-name x) '???) x)]
     [(or (symbol? x) (boolean? x) (char? x) (null? x)) (make-eq-contract x)]
     [(or (bytes? x) (string? x)) (make-equal-contract x)]
     [(number? x) (make-=-contract x)]
@@ -184,9 +180,19 @@
 (define-syntax (define/final-prop stx)
   (syntax-case stx ()
     [(_ header bodies ...)
-     (with-syntax ([ctc (if (identifier? #'header)
-                            #'header
-                            (car (syntax-e #'header)))])
+     (with-syntax ([ctc 
+                    (syntax-case #'header ()
+                      [id
+                       (identifier? #'id)
+                       #'id]
+                      [(id1 . rest)
+                       (identifier? #'id1)
+                       #'id1]
+                      [_ 
+                       (raise-syntax-error #f 
+                                           "malformed header position"
+                                           stx 
+                                           #'header)])])
        (with-syntax ([ctc/proc (string->symbol (format "~a/proc" (syntax-e #'ctc)))])
          #'(begin
              (define ctc/proc
@@ -290,13 +296,13 @@
 (define (check-flat-contract predicate) (coerce-flat-contract 'flat-contract predicate))
 (define (flat-contract predicate) (coerce-flat-contract 'flat-contract predicate))
 (define (check-flat-named-contract predicate) (coerce-flat-contract 'flat-named-contract predicate))
-(define (flat-named-contract name predicate [generate (make-generate-ctc-fail)])
+(define (flat-named-contract name predicate)
   (cond
     [(and (procedure? predicate)
           (procedure-arity-includes? predicate 1))
-     (make-predicate-contract name predicate generate)]
+     (make-predicate-contract name predicate)]
     [(flat-contract? predicate)
-     (make-predicate-contract name (flat-contract-predicate predicate) generate)]
+     (make-predicate-contract name (flat-contract-predicate predicate))]
     [else
      (error 'flat-named-contract 
             "expected a flat contract or procedure of arity 1 as second argument, got ~e" 
@@ -398,14 +404,7 @@
    #:projection get-any-projection
    #:stronger (λ (this that) (any/c? that))
    #:name (λ (ctc) 'any/c)
-   #:first-order get-any?
-   #:generate (λ (ctc)
-                 (λ (n-tests size env)
-                   (rand-choice
-                    [1/4 #t]
-                    [1/4 #f]
-                    [1/4 0]
-                    [else "bla"])))))
+   #:first-order get-any?))
 
 (define/final-prop any/c (make-any/c))
 
@@ -500,7 +499,7 @@
       (and (regexp/c? that) (eq? (regexp/c-reg this) (regexp/c-reg that))))))
 
 
-(define-struct predicate-contract (name pred generate)
+(define-struct predicate-contract (name pred)
   #:property prop:flat-contract
   (build-flat-contract-property
    #:stronger
@@ -509,20 +508,4 @@
            (procedure-closure-contents-eq? (predicate-contract-pred this)
                                            (predicate-contract-pred that))))
    #:name (λ (ctc) (predicate-contract-name ctc))
-   #:first-order (λ (ctc) (predicate-contract-pred ctc))
-   #:generate (λ (ctc)
-                 (if (generate-ctc-fail? (predicate-contract-generate ctc))
-                   (let ([fn (predicate-contract-pred ctc)])
-                     (find-generate fn (contract-name ctc)))
-                   (predicate-contract-generate ctc)))
-#|
-   #:tester (λ (ctc)
-              (let ([pred (predicate-contract-pred ctc)])
-                (λ (val n-tests size env)
-                  (unless (pred val)
-                    (error "Contract generate Error 1")))))
-   |#))
-
-(define (build-flat-contract name pred [generate (make-generate-ctc-fail)])
-  (make-predicate-contract name pred generate))
-
+   #:first-order (λ (ctc) (predicate-contract-pred ctc))))
