@@ -444,29 +444,28 @@ v4 todo:
        (= (length (base->-rngs/c that)) (length (base->-rngs/c this)))
        (andmap contract-stronger? (base->-rngs/c this) (base->-rngs/c that))))
 
-(define (->-generator ctc)
-  (let* ([rngs-gens (map contract-struct-generator (base->-rngs/c ctc))]
+(define (->-generate ctc)
+  (let* ([rngs-gens (map contract-struct-generate (base->-rngs/c ctc))]
          [doms-l (length (base->-doms/c ctc))]
          [arg-names-start-index (get-arg-names-space doms-l)]
          [arg-names (gen-arg-names arg-names-start-index doms-l)])
     (if (member #f rngs-gens)
         #f
-        (λ (n-tests size env)
+        (λ (n-tests fuel env)
           (procedure-reduce-arity
            (λ args
              (let ([new-env env])
                (apply values (map (λ (a-gen)
-                                    (a-gen 0 (- size 1) new-env))
+                                    (a-gen 0 (- fuel 1) new-env))
                                   rngs-gens))))
            doms-l)))))
-#|
-(define (->-tester ctc)
-  ;(printf "doms/c: ~a rngs/c: ~a\n" (->-doms/c ctc) (->-rngs/c ctc))
-  (let* ([doms-gens (map contract-struct-generator (base->-doms/c ctc))]
-         [rngs-testers (map contract-struct-tester (base->-rngs/c ctc))])
-    ;(printf "doms-gens: ~a, rngs-testers: ~a\n" doms-gens rngs-testers)
+
+(define (->-exercise ctc)
+  (let* ([doms-gens (map contract-struct-generate (base->-doms/c ctc))]
+         [rngs-exercises (map contract-struct-exercise (base->-rngs/c ctc))])
+    ;(printf "doms-gens: ~a, rngs-exercises: ~a\n" doms-gens rngs-exercises)
     (if (or (member #f doms-gens)
-            (member #f rngs-testers))
+            (member #f rngs-exercises))
         #f
         (λ (f n-tests size env)
           (for ([i (in-range n-tests)])
@@ -479,9 +478,8 @@ v4 todo:
               ;(printf "result was ~a\n" result)
               ;(printf "res-c ~a\n" (value-contract result))
               (if result-c
-                  ((contract-struct-tester (value-contract result)) result 1 size env)
+                  ((contract-struct-exercise (value-contract result)) result 1 size env)
                   #t)))))))
-|#
 
 
 
@@ -492,8 +490,8 @@ v4 todo:
    #:name ->-name
    #:first-order ->-first-order
    #:stronger ->-stronger?
-   #:generator ->-generator
-   #| #:tester ->-tester |#))
+   #:generate ->-generate
+   #:exercise ->-exercise))
 
 (define-struct (impersonator-> base->) ()
   #:property prop:contract
@@ -502,8 +500,8 @@ v4 todo:
    #:name ->-name
    #:first-order ->-first-order
    #:stronger ->-stronger?
-   #:generator ->-generator
-   #| #:tester ->-tester |#))
+   #:generate ->-generate
+   #:exercise ->-exercise))
 
 (define (build--> name
                   pre post

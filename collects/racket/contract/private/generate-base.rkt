@@ -1,28 +1,23 @@
 #lang racket/base
 
 (provide
-  make-generate-ctc-fail
-  generate-ctc-fail?
-  find-generate
-  add-generate
-
-  print-freq
-  get-freq
-  merge-freq
-  count-missing-generate
-
-  get-arg-names-space
-  gen-arg-names
-  env-item
-  env-item-name
-  env-item-ctc)
+ find-generate
+ add-generate
+ 
+ print-freq
+ get-freq
+ merge-freq
+ count-missing-generate
+ 
+ get-arg-names-space
+ gen-arg-names
+ env-item
+ env-item-name
+ env-item-ctc)
 
  
 ;; generate 
 (define-struct env-item (ctc name))
-
-;; generate failure type
-(define-struct generate-ctc-fail ())
 
 ;; hash tables
 (define freq-hash (make-hash))
@@ -31,14 +26,15 @@
 ;; thread-cell
 (define arg-names-count (make-thread-cell 0))
 
-;; given a predicate returns a generate for this predicate or generate-ctc-fail
+;; given a predicate returns a generate for this predicate or #f
 (define (find-generate func [name "internal"])
-  (let ([gen (hash-ref gen-hash func (make-generate-ctc-fail))])
-    (if (generate-ctc-fail? gen)
-      (begin
-        (count-missing-generate name)
-        gen)
-      gen)))
+  (let ([gen (hash-ref gen-hash func #f)])
+    (if gen
+        gen
+        (begin 
+;          (printf "func ~a\n" name)
+          (count-missing-generate name)
+          #f))))
 
 (define (add-generate ctc gen)
   (hash-set! gen-hash ctc gen))
@@ -56,6 +52,7 @@
                 (gen-arg-names (+ st-num 1) (- size 1)))]))
 
 (define (print-freq)
+  (printf "generate frequency:\n")
   (let* ([l (hash-map freq-hash (λ (k v)
                                  (list k v)))]
          [l-s (sort l (λ (e1 e2)

@@ -484,7 +484,7 @@
         (λ (x) 
            (and (real? x)
                 (<= n x m)))))
-   #:generator
+   #:generate
    (λ (ctc)
     (λ (n-tests size env)
      (let* ([max-n 2147483647]
@@ -560,9 +560,9 @@
      (build-compound-type-name 'not/c ctc)
      (λ (x) (not (pred x))))))
 
-(define (listof-generator el-ctc)
+(define (listof-generate el-ctc)
   (let* ([el-c (coerce-contract el-ctc el-ctc)]
-         [el-gen (contract-struct-generator el-c)])
+         [el-gen (contract-struct-generate el-c)])
     
     (λ (n-tests size env)
       (let* ([rem-size (box size)])
@@ -589,11 +589,9 @@
                  (set-box! rem-size (- size l-size))
                  (l-gen l-size))])))))
 
-#|
-(define (listof-tester el-ctc)
+(define (listof-exercise el-ctc)
   (λ (f n-tests size env)
     #t))
-|#
 
 (define-syntax (*-listof stx)
   (syntax-case stx ()
@@ -622,13 +620,13 @@
               #:name ctc-name
               #:first-order fo-check
               #:projection (ho-check (λ (p v) (for-each p v) v))
-              #:generator (listof-generator ctc))]
+              #:generate (listof-generate ctc))]
             [(chaperone-contract? ctc)
              (make-chaperone-contract
               #:name ctc-name
               #:first-order fo-check
               #:projection (ho-check (λ (p v) (map p v)))
-              #:generator (listof-generator ctc))]
+              #:generate (listof-generate ctc))]
             [else
              (make-contract
               #:name ctc-name
@@ -682,17 +680,14 @@
      (let ([content-pred? (listof-flat/c-element-ctc ctc)])
        (λ (val)
          (and (list? val) (andmap content-pred? val)))))
-   #:generator
+   #:generate
    (λ (ctc)
      ;     #f)
-     (listof-generator (listof-flat/c-element-ctc ctc)))
-   #| 
-   #:tester
+     (listof-generate (listof-flat/c-element-ctc ctc)))
+   #:exercise
    (λ (ctc)
      ;     #f)))
-     (listof-tester (listof-flat/c-element-ctc ctc)))
-   |# 
-   ))
+     (listof-exercise (listof-flat/c-element-ctc ctc)))))
 
 
 
@@ -722,16 +717,14 @@
    #:first-order
    (λ (ctc)
      list?)
-   #:generator
+   #:generate
    (λ (ctc)
      ;     #f)
-     (listof-generator (listof/c-element-ctc ctc)))
-#|
-   #:tester
+     (listof-generate (listof/c-element-ctc ctc)))
+   #:exercise
    (λ (ctc)
      ;     #f)))
-     (listof-tester (listof/c-element-ctc ctc)))
-     |#))
+     (listof-exercise (listof/c-element-ctc ctc)))))
 
 (define (non-empty-list? x) (and (pair? x) (list? (cdr x))))
 (define non-empty-listof-func (*-listof non-empty-list? non-empty-list non-empty-listof))

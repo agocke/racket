@@ -4,7 +4,7 @@
          "blame.rkt"
          "prop.rkt"
          "rand.rkt"
-         "generator-base.rkt"
+         "generate-base.rkt"
          racket/pretty)
 
 (require (for-syntax racket/base
@@ -323,15 +323,15 @@
                                            (predicate-contract-pred that))))
    #:name (λ (ctc) (predicate-contract-name ctc))
    #:first-order (λ (ctc) (predicate-contract-pred ctc))
-   #:generator (λ (ctc)
+   #:generate (λ (ctc)
                  (let ([fn (predicate-contract-pred ctc)])
-                   (find-generator fn (contract-name ctc))))
+                   (find-generate fn (contract-name ctc))))
 #|
    #:tester (λ (ctc)
               (let ([pred (predicate-contract-pred ctc)])
                 (λ (val n-tests size env)
                   (unless (pred val)
-                    (error "Contract Generator Error 1")))))
+                    (error "Contract generate Error 1")))))
    |#))
 
 (define (check-flat-named-contract predicate) (coerce-flat-contract 'flat-named-contract predicate))
