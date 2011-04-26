@@ -4,7 +4,7 @@
          "blame.rkt"
          "prop.rkt"
          "rand.rkt"
-         "generator-base.rkt"
+         "generate-base.rkt"
          racket/pretty)
 
 (require (for-syntax racket/base
@@ -401,7 +401,7 @@
    #:stronger (λ (this that) (any/c? that))
    #:name (λ (ctc) 'any/c)
    #:first-order get-any?
-   #:generator (λ (ctc)
+   #:generate (λ (ctc)
                  (λ (n-tests size env)
                    (rand-choice
                     [1/4 #t]
@@ -512,15 +512,15 @@
                                            (predicate-contract-pred that))))
    #:name (λ (ctc) (predicate-contract-name ctc))
    #:first-order (λ (ctc) (predicate-contract-pred ctc))
-   #:generator (λ (ctc)
+   #:generate (λ (ctc)
                  (let ([fn (predicate-contract-pred ctc)])
-                   (find-generator fn (contract-name ctc))))
+                   (find-generate fn (contract-name ctc))))
 #|
    #:tester (λ (ctc)
               (let ([pred (predicate-contract-pred ctc)])
                 (λ (val n-tests size env)
                   (unless (pred val)
-                    (error "Contract Generator Error 1")))))
+                    (error "Contract generate Error 1")))))
    |#))
 
 (define (build-flat-contract name pred) (make-predicate-contract name pred))

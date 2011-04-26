@@ -16,8 +16,8 @@
          "private/legacy.rkt"
          "private/ds.rkt"
          "private/opt.rkt"
-         "private/generator.rkt"
-         "private/generator-base.rkt"
+         "private/generate.rkt"
+         "private/generate-base.rkt"
          "private/env.rkt")
 
 (provide
@@ -49,5 +49,5 @@
              check-flat-contract
              check-flat-named-contract)
  ;(all-from-out "private/generator.rkt")
- (all-from-out "private/generator-base.rkt")
+ (all-from-out "private/generate-base.rkt")
  (all-from-out "private/env.rkt"))

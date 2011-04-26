@@ -1,7 +1,7 @@
 #lang racket/base
 
 (require "rand.rkt"
-         "generator-base.rkt"
+         "generate-base.rkt"
          "guts.rkt"
          "arrow.rkt"
          racket/list)
@@ -17,8 +17,8 @@
 ;; thread-cell
 ;(define arg-names-count (make-thread-cell 0))
 
-;; Generator integer? 
-(add-generator integer?
+;; generate integer? 
+(add-generate integer?
            (λ (n-tests size env)
              (rand-choice
               [1/10 0]
@@ -29,12 +29,12 @@
               [3/10 (- 100 (rand 200))]
               [else (- 1000000000 (rand 2000000000))])))
 
-(add-generator exact-nonnegative-integer?
+(add-generate exact-nonnegative-integer?
                (λ (n-tests size env)
-                 (abs ((find-generator integer?) n-tests size env))))
+                 (abs ((find-generate integer?) n-tests size env))))
 
 
-(add-generator positive?
+(add-generate positive?
            (λ (n-tests size env)
              (rand-choice
               [1/10 1]
@@ -43,7 +43,7 @@
               [1/10 2147483647]
               [else 4])))
 
-(add-generator boolean?
+(add-generate boolean?
            (λ (n-tests size env)
              (define (boolean?-static n-tests size env)
                (rand-choice
@@ -78,7 +78,7 @@
               (list have-val)
               '())
           (if (base->? have-ctc)
-              (let* ([gens (map contract-struct-generator
+              (let* ([gens (map contract-struct-generate
                                 (base->-doms/c have-ctc))])
                 (if (member #f gens)
                     '()
@@ -122,8 +122,8 @@
         (values #f #f))))
 
 
-(define (generator ctc env)
-  (let ([g (contract-struct-generator ctc)]
+(define (generate ctc env)
+  (let ([g (contract-struct-generate ctc)]
         [e (let-values ([(res f) (use-env 0 0 env ctc)])
              res)])
     (if (or g e)

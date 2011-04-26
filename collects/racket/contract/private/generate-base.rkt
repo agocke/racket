@@ -1,13 +1,13 @@
 #lang racket/base
 
 (provide
- find-generator
- add-generator
+ find-generate
+ add-generate
  
  print-freq
  get-freq
  merge-freq
- count-missing-generator
+ count-missing-generate
  
  get-arg-names-space
  gen-arg-names
@@ -16,7 +16,7 @@
  env-item-ctc)
 
  
-;; generator 
+;; generate 
 (define-struct env-item (ctc name))
 
 ;; hash tables
@@ -26,17 +26,17 @@
 ;; thread-cell
 (define arg-names-count (make-thread-cell 0))
 
-;; given a predicate returns a generator for this predicate or #f
-(define (find-generator func [name "internal"])
+;; given a predicate returns a generate for this predicate or #f
+(define (find-generate func [name "internal"])
   (let ([gen (hash-ref gen-hash func #f)])
     (if gen
         gen
         (begin 
 ;          (printf "func ~a\n" name)
-          (count-missing-generator name)
+          (count-missing-generate name)
           #f))))
 
-(define (add-generator ctc gen)
+(define (add-generate ctc gen)
   (hash-set! gen-hash ctc gen))
   
 
@@ -52,7 +52,7 @@
                 (gen-arg-names (+ st-num 1) (- size 1)))]))
 
 (define (print-freq)
-  (printf "Generator frequency:\n")
+  (printf "generate frequency:\n")
   (let* ([l (hash-map freq-hash (λ (k v)
                                  (list k v)))]
          [l-s (sort l (λ (e1 e2)
@@ -65,7 +65,7 @@
          l-s))
   null)
 
-(define (count-missing-generator ctc)
+(define (count-missing-generate ctc)
   (hash-update! freq-hash 
                ctc 
                (λ (x)
