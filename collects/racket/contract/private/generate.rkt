@@ -65,8 +65,7 @@
 ;; A new property for every contract has to be added with a name of
 ;; can-generate-given (or some better name). The interface looks like this:
 ;; can-generate-given: val -> (list-of ((list-of in-ctc), out-ctc, lambda-from-in-ctc-to-out-ctc))
-;; in other words given a val with a contract we get the contract of this value. Than we
-;; get the implementation of can-generate-given from the contract property and using it 
+;; in other words given a val with a contract we get the contract of this value. Than we ;; get the implementation of can-generate-given from the contract property and using it 
 ;; we generate a list of tuples. Each tuple shows one possible use of this val in generating 
 ;; out-ctc give a number of in-ctc. The last element in the tuple is something that can
 ;; be used to generate the right output given the right input.
@@ -134,7 +133,26 @@
                    v)]))
         #f)))
 
+; generate : contract -> ??
+(define (generate ctc)
+ (let ([options (permute '(generate/direct
+                            generate/direct-env
+                            generate/indirect-env))])
+   ; choose randomly
+   (or ((first options))
+       ((second options))
+       ((third options))
+       (error "Unable to construct any generator for contract: ~a"
+              ctc))))
 
+; generate/direct :: contract -> (int int -> value for contract)
+; Attempts to make a generator that generates values for this contract
+; directly. Returns #f if making a generator fails.
+(define (generate/direct ctc)
+  #f)
 
+(define (generate/direct-env ctc)
+  #f)
 
-
+(define (generate/indirect-env ctc)
+  #f)

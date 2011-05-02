@@ -31,10 +31,10 @@
   (let ([gen (hash-ref gen-hash func #f)])
     (if gen
         gen
-        (begin 
-;          (printf "func ~a\n" name)
-          (count-missing-generate name)
-          #f))))
+      (begin
+       ;          (printf "func ~a\n" name)
+       (count-missing-generate name)
+       #f))))
 
 (define (add-generate ctc gen)
   (hash-set! gen-hash ctc gen))

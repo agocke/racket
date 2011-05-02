@@ -68,3 +68,7 @@
             (loop (- n (car nums))
                   (cdr nums)
                   (cdr thunks))])]))))
+
+; oneof :: [a] -> a
+; Randomly chooses one of the values from a given list
+(define (oneof a-list) #f)
