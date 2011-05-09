@@ -8,7 +8,11 @@
 
 (provide
  use-env
- env-item)
+ env-item
+ contract-generate)
+
+; env
+(define generate-env (make-thread-cell (make-hash)))
 
 ;; hash tables
 ;(define freq-hash (make-hash))
@@ -65,8 +69,7 @@
 ;; A new property for every contract has to be added with a name of
 ;; can-generate-given (or some better name). The interface looks like this:
 ;; can-generate-given: val -> (list-of ((list-of in-ctc), out-ctc, lambda-from-in-ctc-to-out-ctc))
-;; in other words given a val with a contract we get the contract of this value. Than we
-;; get the implementation of can-generate-given from the contract property and using it 
+;; in other words given a val with a contract we get the contract of this value. Than we ;; get the implementation of can-generate-given from the contract property and using it 
 ;; we generate a list of tuples. Each tuple shows one possible use of this val in generating 
 ;; out-ctc give a number of in-ctc. The last element in the tuple is something that can
 ;; be used to generate the right output given the right input.
@@ -122,19 +125,48 @@
         (values #f #f))))
 
 
-(define (generate ctc env)
-  (let ([g (contract-struct-generate ctc)]
-        [e (let-values ([(res f) (use-env 0 0 env ctc)])
-             res)])
-    (if (or g e)
-        (λ (n-tests size)
-          (rand-choice
-           [1/2 (g n-tests size env)]
-           [else (let-values ([(res v) (use-env n-tests size env ctc)])
-                   v)]))
-        #f)))
+;(define (generate ctc env)
+;  (let ([g (contract-struct-generate ctc)]
+;        [e (let-values ([(res f) (use-env 0 0 env ctc)])
+;             res)])
+;    (if (or g e)
+;        (λ (n-tests size)
+;          (rand-choice
+;           [1/2 (g n-tests size env)]
+;           [else (let-values ([(res v) (use-env n-tests size env ctc)])
+;                   v)]))
+;        #f)))
 
+; generate : contract -> ??
+(define (contract-generate ctc fuel)
+ (let ([ctc (coerce-contract 'generate ctc)]
+       [options (permute (list generate/direct
+                               generate/direct-env
+                               generate/indirect-env))])
+   ; choose randomly
+   (or (for/or ([option (in-list options)])
+         (option ctc fuel))
+       (error "Unable to construct any generator for contract: ~a"
+              ctc))))
 
+; generate/direct :: contract -> (int int -> value for contract)
+; Attempts to make a generator that generates values for this contract
+; directly. Returns #f if making a generator fails.
+(define (generate/direct ctc)
+  (let ([g (contract-struct-generate ctc)])
+    (or g #f)))
 
+(define (generate/direct-env ctc)
+  (let* ([keys (hash-keys (thread-cell-ref generate-env))]
+        [valid-ctcs (filter (λ (c)
+                               (or (equal? c ctc)
+                                   (contract-stronger? c ctc)))
+                            keys)])
+    (if (> (length valid-ctcs) 0)
+      (oneof (map (λ (key)
+                     (hash-ref (thread-cell-ref key)))
+                  valid-ctcs))
+      #f)))
 
-
+(define (generate/indirect-env ctc)
+  #f)
