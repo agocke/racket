@@ -9,7 +9,7 @@
 (provide
  use-env
  env-item
- generate)
+ contract-generate)
 
 ; env
 (define gen-env (make-thread-cell (make-hash)))
@@ -138,14 +138,14 @@
 ;        #f)))
 
 ; generate : contract -> ??
-(define (generate ctc)
- (let ([options (permute '(generate/direct
-                            generate/direct-env
-                            generate/indirect-env))])
+(define (contract-generate ctc fuel)
+ (let ([ctc (coerce-contract 'generate ctc)]
+       [options (permute (list generate/direct
+                               generate/direct-env
+                               generate/indirect-env))])
    ; choose randomly
-   (or ((first options))
-       ((second options))
-       ((third options))
+   (or (for/or ([option (in-list options)])
+         (option ctc fuel))
        (error "Unable to construct any generator for contract: ~a"
               ctc))))
 

@@ -13,11 +13,13 @@ differences from v3:
          racket/contract/regions
          "contract/private/basic-opters.rkt"
          "contract/base.rkt"
-         "private/define-struct.rkt")
+         "private/define-struct.rkt"
+         "contract/private/generate.rkt")
 
 (provide (all-from-out "contract/base.rkt")
  (except-out (all-from-out racket/contract/exists) ∀∃?)
- (all-from-out racket/contract/regions))
+ (all-from-out racket/contract/regions)
+ contract-generate)
 
 ;; ======================================================================
 ;; The alternate implementation disables contracts. Its useful mainly to
