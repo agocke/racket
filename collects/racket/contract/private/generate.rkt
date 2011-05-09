@@ -8,7 +8,11 @@
 
 (provide
  use-env
- env-item)
+ env-item
+ generate)
+
+; env
+(define gen-env (make-thread-cell (make-hash)))
 
 ;; hash tables
 ;(define freq-hash (make-hash))
@@ -121,17 +125,17 @@
         (values #f #f))))
 
 
-(define (generate ctc env)
-  (let ([g (contract-struct-generate ctc)]
-        [e (let-values ([(res f) (use-env 0 0 env ctc)])
-             res)])
-    (if (or g e)
-        (λ (n-tests size)
-          (rand-choice
-           [1/2 (g n-tests size env)]
-           [else (let-values ([(res v) (use-env n-tests size env ctc)])
-                   v)]))
-        #f)))
+;(define (generate ctc env)
+;  (let ([g (contract-struct-generate ctc)]
+;        [e (let-values ([(res f) (use-env 0 0 env ctc)])
+;             res)])
+;    (if (or g e)
+;        (λ (n-tests size)
+;          (rand-choice
+;           [1/2 (g n-tests size env)]
+;           [else (let-values ([(res v) (use-env n-tests size env ctc)])
+;                   v)]))
+;        #f)))
 
 ; generate : contract -> ??
 (define (generate ctc)
@@ -149,10 +153,20 @@
 ; Attempts to make a generator that generates values for this contract
 ; directly. Returns #f if making a generator fails.
 (define (generate/direct ctc)
-  #f)
+  (let ([g (contract-struct-generate ctc)])
+    (or g #f)))
 
 (define (generate/direct-env ctc)
-  #f)
+  (let* ([keys (hash-keys (thread-cell-ref gen-env))]
+        [valid-ctcs (filter (λ (c)
+                               (or (equal? c ctc)
+                                   (contract-stronger? c ctc)))
+                            keys)])
+    (if (> (length valid-ctcs) 0)
+      (oneof (map (λ (key)
+                     (hash-ref (thread-cell-ref key)))
+                  valid-ctcs))
+      #f)))
 
 (define (generate/indirect-env ctc)
   #f)

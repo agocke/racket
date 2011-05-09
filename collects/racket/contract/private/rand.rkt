@@ -4,7 +4,9 @@
 
 (provide rand
          rand-seed
-         rand-choice)
+         rand-choice
+         permute
+         oneof)
 
 
 ;; random generator
@@ -71,4 +73,6 @@
 
 ; oneof :: [a] -> a
 ; Randomly chooses one of the values from a given list
-(define (oneof a-list) #f)
+(define (oneof a-list) (car a-list))
+
+(define (permute a-list) a-list)
