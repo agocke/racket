@@ -12,7 +12,7 @@
  generate)
 
 ; env
-(define gen-env (make-thread-cell (make-hash)))
+(define generate-env (make-thread-cell (make-hash)))
 
 ;; hash tables
 ;(define freq-hash (make-hash))
@@ -157,7 +157,7 @@
     (or g #f)))
 
 (define (generate/direct-env ctc)
-  (let* ([keys (hash-keys (thread-cell-ref gen-env))]
+  (let* ([keys (hash-keys (thread-cell-ref generate-env))]
         [valid-ctcs (filter (λ (c)
                                (or (equal? c ctc)
                                    (contract-stronger? c ctc)))
