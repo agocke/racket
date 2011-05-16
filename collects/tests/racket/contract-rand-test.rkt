@@ -4,8 +4,8 @@
 
 (define (test-contract-generation ctc [monkey-with values] #:size [size 10])
   ;; generator : number[of tests] number[size bound] ??[env] -> any
-  (define generator (generate ctc))
-  (define an-example (generator 10 size '()))
+  (define generator (contract-generate ctc size))
+  (define an-example (generator 10 '()))
   (monkey-with (contract ctc an-example 'pos 'neg)))
   
 (test-contract-generation (listof integer?))

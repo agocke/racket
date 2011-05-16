@@ -529,7 +529,7 @@
                 (<= n x m)))))
    #:generate
    (λ (ctc)
-    (λ (n-tests size env)
+    (λ (fuel env)
      (let* ([max-n 2147483647]
             [min-n -2147483648]
             [upper (if (> (between/c-high ctc) max-n)
