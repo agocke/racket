@@ -8,10 +8,11 @@
 
 (provide use-env
          env-item
-         contract-generate)
+         contract-generate
+         generate/direct)
 
-; env
-(define generate-env (make-thread-cell (make-hash)))
+; env parameter
+(define generate-env (make-parameter (make-hash)))
 
 ;; hash tables
 ;(define freq-hash (make-hash))
@@ -135,13 +136,13 @@
 ;        #f)))
 
 ; generate : contract -> ??
-(define (contract-generate ctc fuel env)
+(define (contract-generate ctc fuel)
  (let ([options (permute (list generate/direct
                                generate/direct-env
                                generate/indirect-env))])
    ; choose randomly
    (or (for/or ([option (in-list options)])
-         (option ctc fuel env))
+         (option ctc fuel generate-env))
        (error "Unable to construct any generator for contract: ~a"
               ctc))))
 
@@ -153,9 +154,9 @@
          [g (contract-struct-generate def-ctc)]
          [f (find-generate ctc)])
     ; Check if the contract has a direct generate attached
-    (cond [g (g def-ctc fuel env)]
+    (cond [g (g def-ctc fuel)]
           ; Check if the predicate exists in our hashtable
-          [f (f fuel env)]
+          [f (f fuel)]
           ; Everything failed -- we can't directly generate this ctc
           [else #f])))
 

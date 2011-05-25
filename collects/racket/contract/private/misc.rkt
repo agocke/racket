@@ -6,7 +6,8 @@
          racket/promise
          "opt.rkt"
          "guts.rkt"
-         "rand.rkt")
+         "rand.rkt"
+         "generate.rkt")
 
 (provide flat-rec-contract
          flat-murec-contract
@@ -528,7 +529,7 @@
            (and (real? x)
                 (<= n x m)))))
    #:generate
-   (λ (fuel env)
+   (λ (ctc fuel env)
      (let* ([max-n 2147483647]
             [min-n -2147483648]
             [upper (if (> (between/c-high ctc) max-n)
@@ -737,32 +738,12 @@
      (build-compound-type-name 'not/c ctc)
      (λ (x) (not (pred x))))))
 
-(define (listof-generate el-ctc fuel env)
-  (let* ([el-c (coerce-contract el-ctc el-ctc)]
-         [el-gen (contract-struct-generate el-c)])
-    (let* ([rem-size (box size)])
-
-      (define (l-gen l-size)
-        (cond
-          [(or (<= l-size 0)
-               (<= (unbox rem-size) 0)) (list)]
-          [else (let* ([el-size (rand (unbox rem-size))])
-                  (set-box! rem-size (- (unbox rem-size) el-size))
-                  (cons (el-gen 0 el-size env)
-                        (l-gen (- l-size 1))))]))
-
-
-      (rand-choice
-        [1/4 (list)]
-        [1/4 (begin
-               (set-box! rem-size (- size 2))
-               (l-gen 2))]
-        [1/4 (let* ([l-size (rand (min 10 (+ size 1)))])
-               (set-box! rem-size (- size l-size))
-               (l-gen l-size))]
-        [else (let* ([l-size (rand (+ size 1))])
-                (set-box! rem-size (- size l-size))
-                (l-gen l-size))]))))
+(define (listof-generate elem-ctc fuel env)
+  (define (mk-rand-list so-far)
+    (rand-choice
+      [1/4 so-far]
+      [else (generate/direct elem-ctc fuel env)]))
+  (mk-rand-list (list)))
 
 (define (listof-exercise el-ctc)
   (λ (f n-tests size env)
@@ -795,13 +776,13 @@
               #:name ctc-name
               #:first-order fo-check
               #:projection (ho-check (λ (p v) (for-each p v) v))
-              #:generate (listof-generate ctc))]
+              #:generate listof-generate)]
             [(chaperone-contract? ctc)
              (make-chaperone-contract
               #:name ctc-name
               #:first-order fo-check
               #:projection (ho-check (λ (p v) (map p v)))
-              #:generate (listof-generate ctc))]
+              #:generate listof-generate)]
             [else
              (make-contract
               #:name ctc-name

@@ -80,6 +80,7 @@
   (let* ([prop (contract-struct-property c)]
          [generate (contract-property-generate prop)])
     (if (procedure? generate)
+      ; FIXME: Call needs to take multiple arguments
         (generate c)
         (begin
           (count-missing-generate (contract-struct-name c))
