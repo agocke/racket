@@ -1,0 +1,13 @@
+
+raco setup racket
+cd plt/collects/tests/racket
+racket -qr contract-test.rkt
+racket -qr contract-mzlib-test.rkt
+
+when finding a bug, make a file like this:
+
+  #lang racket/base
+  (require racket/contract)
+  ...example use here...
+
+add to the environment when doing arrow generate

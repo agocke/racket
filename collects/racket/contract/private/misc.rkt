@@ -529,17 +529,18 @@
            (and (real? x)
                 (<= n x m)))))
    #:generate
-   (λ (ctc fuel env)
-     (let* ([max-n 2147483647]
-            [min-n -2147483648]
-            [upper (if (> (between/c-high ctc) max-n)
-                max-n
-                (between/c-high ctc))]
-            [lower (if (< (between/c-low ctc) min-n)
-                min-n
-                (between/c-low ctc))])
-      (+ (random (- upper lower))
-       lower)))))
+   (λ (ctc)
+      (λ (fuel)
+         (let* ([max-n 2147483647]
+                [min-n -2147483648]
+                [upper (if (> (between/c-high ctc) max-n)
+                         max-n
+                         (between/c-high ctc))]
+                [lower (if (< (between/c-low ctc) min-n)
+                         min-n
+                         (between/c-low ctc))])
+           (+ (random (- upper lower))
+              lower))))))
 
 (define-syntax (check-unary-between/c stx)
   (syntax-case stx ()
