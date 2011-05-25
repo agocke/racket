@@ -6,13 +6,13 @@
          "arrow.rkt"
          racket/list)
 
-(provide
- use-env
- env-item
- contract-generate)
+(provide use-env
+         env-item
+         contract-generate
+         generate/direct)
 
-; env
-(define generate-env (make-thread-cell (make-hash)))
+; env parameter
+(define generate-env (make-parameter (make-hash)))
 
 ;; hash tables
 ;(define freq-hash (make-hash))
@@ -23,7 +23,7 @@
 
 ;; generate integer? 
 (add-generate integer?
-           (λ (n-tests size env)
+           (λ (fuel env)
              (rand-choice
               [1/10 0]
               [1/10 1]
@@ -34,12 +34,12 @@
               [else (- 1000000000 (rand 2000000000))])))
 
 (add-generate exact-nonnegative-integer?
-               (λ (n-tests size env)
-                 (abs ((find-generate integer?) n-tests size env))))
+               (λ (fuel env)
+                 (abs ((find-generate integer?) fuel env))))
 
 
 (add-generate positive?
-           (λ (n-tests size env)
+           (λ (fuel env)
              (rand-choice
               [1/10 1]
               [1/10 1/3]
@@ -48,18 +48,18 @@
               [else 4])))
 
 (add-generate boolean?
-           (λ (n-tests size env)
-             (define (boolean?-static n-tests size env)
+           (λ (fuel env)
+             (define (boolean?-static fuel env)
                (rand-choice
                 [1/2 #t]
                 [else #f]))
              
              (rand-choice
-              [2/3 (boolean?-static n-tests size env)]
-              [else (let-values ([(res v) (use-env n-tests size env boolean?)])
+              [2/3 (boolean?-static fuel env)]
+              [else (let-values ([(res v) (use-env fuel env boolean?)])
                       (if res
                           v
-                          (boolean?-static n-tests size env)))])))
+                          (boolean?-static fuel env)))])))
 
 
 
@@ -76,7 +76,7 @@
 
 
 
-(define (gen-opts have-val want-ctc have-ctc n-tests size env)
+(define (gen-opts have-val want-ctc have-ctc fuel env)
   (append (if (contract-stronger? have-ctc want-ctc)
               (list have-val)
               '())
@@ -100,21 +100,19 @@
                                                                     (list-ref args i)))) 
                                               want-ctc 
                                               (first result-ctcs)
-                                              n-tests
-                                              size
+                                              fuel
                                               env)
                                     (useful-results (rest result-ctcs) (+ i 1))))))))
                 '())))
 
-(define (use-env n-tests size env ctc
+(define (use-env fuel env ctc
                  #:test [is-test #f])
   (let ([options (flatten (map (λ (e-i)
                                  ;; contact-stronger? stronger weaker -> #
                                  (gen-opts (env-item-name e-i)
                                            ctc
                                            (env-item-ctc e-i)
-                                           n-tests
-                                           size
+                                           fuel
                                            env))
                                env))])
     
@@ -139,34 +137,40 @@
 
 ; generate : contract -> ??
 (define (contract-generate ctc fuel)
- (let ([ctc (coerce-contract 'generate ctc)]
-       [options (permute (list generate/direct
+ (let ([options (permute (list generate/direct
                                generate/direct-env
                                generate/indirect-env))])
    ; choose randomly
    (or (for/or ([option (in-list options)])
-         (option ctc fuel))
+         (option ctc fuel generate-env))
        (error "Unable to construct any generator for contract: ~a"
               ctc))))
 
 ; generate/direct :: contract -> (int int -> value for contract)
 ; Attempts to make a generator that generates values for this contract
 ; directly. Returns #f if making a generator fails.
-(define (generate/direct ctc)
-  (let ([g (contract-struct-generate ctc)])
-    (or g #f)))
+(define (generate/direct ctc fuel env)
+  (let* ([def-ctc (coerce-contract 'generate ctc)]
+         [g (contract-struct-generate def-ctc)]
+         [f (find-generate ctc)])
+    ; Check if the contract has a direct generate attached
+    (cond [g (g def-ctc fuel)]
+          ; Check if the predicate exists in our hashtable
+          [f (f fuel)]
+          ; Everything failed -- we can't directly generate this ctc
+          [else #f])))
 
-(define (generate/direct-env ctc)
+(define (generate/direct-env ctc fuel)
   (let* ([keys (hash-keys (thread-cell-ref generate-env))]
-        [valid-ctcs (filter (λ (c)
-                               (or (equal? c ctc)
-                                   (contract-stronger? c ctc)))
-                            keys)])
+         [valid-ctcs (filter (λ (c)
+                                (or (equal? c ctc)
+                                    (contract-stronger? c ctc)))
+                             keys)])
     (if (> (length valid-ctcs) 0)
       (oneof (map (λ (key)
                      (hash-ref (thread-cell-ref key)))
                   valid-ctcs))
       #f)))
 
-(define (generate/indirect-env ctc)
+(define (generate/indirect-env ctc fuel)
   #f)
