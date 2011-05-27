@@ -154,7 +154,7 @@
   (cond
     [(contract-struct? x) x]
     [(and (procedure? x) (procedure-arity-includes? x 1)) 
-     (make-predicate-contract (or (object-name x) '???) x)]
+     (make-predicate-contract (or (object-name x) '???) x #f)]
     [(or (symbol? x) (boolean? x) (char? x) (null? x)) (make-eq-contract x)]
     [(or (bytes? x) (string? x)) (make-equal-contract x)]
     [(number? x) (make-=-contract x)]
@@ -313,7 +313,7 @@
       (and (regexp/c? that) (eq? (regexp/c-reg this) (regexp/c-reg that))))))
 
 
-(define-struct predicate-contract (name pred)
+(define-struct predicate-contract (name pred generate)
   #:property prop:flat-contract
   (build-flat-contract-property
    #:stronger
@@ -324,8 +324,9 @@
    #:name (λ (ctc) (predicate-contract-name ctc))
    #:first-order (λ (ctc) (predicate-contract-pred ctc))
    #:generate (λ (ctc)
-                 (let ([fn (predicate-contract-pred ctc)])
-                   (find-generate fn (contract-name ctc))))
+                 (or (predicate-contract-generate ctc)
+                     (let ([fn (predicate-contract-pred ctc)])
+                       (find-generate fn (contract-name ctc)))))
 #|
    #:tester (λ (ctc)
               (let ([pred (predicate-contract-pred ctc)])
