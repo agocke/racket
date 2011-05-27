@@ -21,7 +21,7 @@ v4 todo:
 
 (require "guts.rkt"
          "opt.rkt"
-         "generate-base.rkt"
+         "generate.rkt"
          racket/stxparam)
 (require (for-syntax racket/base)
          (for-syntax "opt-guts.rkt")
@@ -445,20 +445,17 @@ v4 todo:
        (andmap contract-stronger? (base->-rngs/c this) (base->-rngs/c that))))
 
 (define (->-generate ctc)
-  (let* ([rngs-gens (map contract-struct-generate (base->-rngs/c ctc))]
-         [doms-l (length (base->-doms/c ctc))]
-         [arg-names-start-index (get-arg-names-space doms-l)]
-         [arg-names (gen-arg-names arg-names-start-index doms-l)])
-    (if (member #f rngs-gens)
-        #f
-        (λ (n-tests fuel env)
-          (procedure-reduce-arity
-           (λ args
-             (let ([new-env env])
-               (apply values (map (λ (a-gen)
-                                    (a-gen 0 (- fuel 1) new-env))
-                                  rngs-gens))))
-           doms-l)))))
+  (let ([doms-l (length (base->-doms/c ctc))])
+        (λ (fuel)
+           (let ([rngs-gens (map (λ (c) (generate/direct c (/ fuel 2)))
+                                 (base->-rngs/c ctc))])
+             (if (member #f rngs-gens)
+               #f
+               (procedure-reduce-arity
+                 (λ args
+                    ;(hash-set! (generate-env) 
+                    (apply values rngs-gens))
+                 doms-l))))))
 
 (define (->-exercise ctc)
   (let* ([doms-gens (map contract-struct-generate (base->-doms/c ctc))]
