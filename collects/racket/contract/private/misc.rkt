@@ -559,12 +559,14 @@
      (build-compound-type-name 'not/c ctc)
      (λ (x) (not (pred x))))))
 
-(define (listof-generate elem-ctc fuel env)
-  (define (mk-rand-list so-far)
-    (rand-choice
-      [1/4 so-far]
-      [else (generate/direct elem-ctc fuel env)]))
-  (mk-rand-list (list)))
+(define (listof-generate elem-ctc)
+  (λ (fuel)
+     (define (mk-rand-list so-far)
+       (rand-choice
+         [1/5 so-far]
+         [else (mk-rand-list (cons (generate/direct elem-ctc fuel)
+                                   so-far))]))
+     (mk-rand-list (list))))
 
 (define (listof-exercise el-ctc)
   (λ (f n-tests size env)
@@ -597,13 +599,13 @@
               #:name ctc-name
               #:first-order fo-check
               #:projection (ho-check (λ (p v) (for-each p v) v))
-              #:generate listof-generate)]
+              #:generate (listof-generate ctc))]
             [(chaperone-contract? ctc)
              (make-chaperone-contract
               #:name ctc-name
               #:first-order fo-check
               #:projection (ho-check (λ (p v) (map p v)))
-              #:generate listof-generate)]
+              #:generate (listof-generate ctc))]
             [else
              (make-contract
               #:name ctc-name

@@ -3,16 +3,15 @@
 (require "rand.rkt"
          "generate-base.rkt"
          "guts.rkt"
-         "arrow.rkt"
          racket/list)
 
-(provide use-env
+(provide ;use-env
          env-item
          contract-generate
          generate/direct)
 
 ; env parameter
-(define generate-env (make-parameter (make-hash)))
+(define generate-env (make-parameter #f))
 
 ;; hash tables
 ;(define freq-hash (make-hash))
@@ -23,7 +22,7 @@
 
 ;; generate integer? 
 (add-generate integer?
-           (λ (fuel env)
+           (λ (fuel)
              (rand-choice
               [1/10 0]
               [1/10 1]
@@ -34,12 +33,12 @@
               [else (- 1000000000 (rand 2000000000))])))
 
 (add-generate exact-nonnegative-integer?
-               (λ (fuel env)
-                 (abs ((find-generate integer?) fuel env))))
+               (λ (fuel)
+                 (abs ((find-generate integer?) fuel))))
 
 
 (add-generate positive?
-           (λ (fuel env)
+           (λ (fuel)
              (rand-choice
               [1/10 1]
               [1/10 1/3]
@@ -48,19 +47,22 @@
               [else 4])))
 
 (add-generate boolean?
-           (λ (fuel env)
-             (define (boolean?-static fuel env)
-               (rand-choice
-                [1/2 #t]
-                [else #f]))
-             
-             (rand-choice
-              [2/3 (boolean?-static fuel env)]
-              [else (let-values ([(res v) (use-env fuel env boolean?)])
-                      (if res
-                          v
-                          (boolean?-static fuel env)))])))
-
+    (λ (fuel)
+       (rand-choice
+         [1/2 #t]
+         [else #f])))
+;           (λ (fuel)
+;             (define (boolean?-static fuel)
+;               (rand-choice
+;                [1/2 #t]
+;                [else #f]))
+;             
+;             (rand-choice
+;              [2/3 (boolean?-static fuel)]
+;              [else (let-values ([(res v) (use-env fuel generate-env boolean?)])
+;                      (if res
+;                          v
+;                          (boolean?-static fuel generate-env)))])))
 
 
 
@@ -76,51 +78,51 @@
 
 
 
-(define (gen-opts have-val want-ctc have-ctc fuel env)
-  (append (if (contract-stronger? have-ctc want-ctc)
-              (list have-val)
-              '())
-          (if (base->? have-ctc)
-              (let* ([gens (map contract-struct-generate
-                                (base->-doms/c have-ctc))])
-                (if (member #f gens)
-                    '()
-                    (let useful-results ([result-ctcs (base->-rngs/c have-ctc)]
-                                         [i 0])
-                      (if (empty? result-ctcs)
-                          '()
-                          (let* ([args (map (λ (g)
-                                              ; what should n-tests and size be
-                                              (g 0 0 env))
-                                            gens)])
-                            (append (gen-opts (λ ()
-                                                (call-with-values (λ ()
-                                                                    (apply have-val args))
-                                                                  (λ args
-                                                                    (list-ref args i)))) 
-                                              want-ctc 
-                                              (first result-ctcs)
-                                              fuel
-                                              env)
-                                    (useful-results (rest result-ctcs) (+ i 1))))))))
-                '())))
+;(define (gen-opts have-val want-ctc have-ctc fuel env)
+;  (append (if (contract-stronger? have-ctc want-ctc)
+;              (list have-val)
+;              '())
+;          (if (base->? have-ctc)
+;              (let* ([gens (map contract-struct-generate
+;                                (base->-doms/c have-ctc))])
+;                (if (member #f gens)
+;                    '()
+;                    (let useful-results ([result-ctcs (base->-rngs/c have-ctc)]
+;                                         [i 0])
+;                      (if (empty? result-ctcs)
+;                          '()
+;                          (let* ([args (map (λ (g)
+;                                              ; what should n-tests and size be
+;                                              (g 0 0 env))
+;                                            gens)])
+;                            (append (gen-opts (λ ()
+;                                                (call-with-values (λ ()
+;                                                                    (apply have-val args))
+;                                                                  (λ args
+;                                                                    (list-ref args i)))) 
+;                                              want-ctc 
+;                                              (first result-ctcs)
+;                                              fuel
+;                                              env)
+;                                    (useful-results (rest result-ctcs) (+ i 1))))))))
+;                '())))
 
-(define (use-env fuel env ctc
-                 #:test [is-test #f])
-  (let ([options (flatten (map (λ (e-i)
-                                 ;; contact-stronger? stronger weaker -> #
-                                 (gen-opts (env-item-name e-i)
-                                           ctc
-                                           (env-item-ctc e-i)
-                                           fuel
-                                           env))
-                               env))])
-    
-    (if (not (null? options))
-        (values #t (if is-test
-                       options
-                       ((list-ref options (rand (length options))))))
-        (values #f #f))))
+;(define (use-env fuel ctc
+;                 #:test [is-test #f])
+;  (let ([options (flatten (map (λ (e-i)
+;                                 ;; contact-stronger? stronger weaker -> #
+;                                 (gen-opts (env-item-name e-i)
+;                                           ctc
+;                                           (env-item-ctc e-i)
+;                                           fuel
+;                                           (generate-env)))
+;                               (generate-env)))])
+;    
+;    (if (not (null? options))
+;        (values #t (if is-test
+;                       options
+;                       ((list-ref options (rand (length options))))))
+;        (values #f #f))))
 
 
 ;(define (generate ctc env)
@@ -140,28 +142,26 @@
  (let ([options (permute (list generate/direct
                                generate/direct-env
                                generate/indirect-env))])
-   ; choose randomly
-   (or (for/or ([option (in-list options)])
-         (option ctc fuel generate-env))
-       (error "Unable to construct any generator for contract: ~a"
-              ctc))))
+   (parameterize ([generate-env (make-hash)])
+     ; choose randomly
+     (or (for/or ([option (in-list options)])
+                 (option ctc fuel)) 
+         (error "Unable to construct any generator for contract: ~a"
+                ctc)))))
 
 ; generate/direct :: contract -> (int int -> value for contract)
 ; Attempts to make a generator that generates values for this contract
 ; directly. Returns #f if making a generator fails.
-(define (generate/direct ctc fuel env)
+(define (generate/direct ctc fuel)
   (let* ([def-ctc (coerce-contract 'generate ctc)]
-         [g (contract-struct-generate def-ctc)]
-         [f (find-generate ctc)])
+         [g (contract-struct-generate def-ctc)])
     ; Check if the contract has a direct generate attached
-    (cond [g (g def-ctc fuel)]
-          ; Check if the predicate exists in our hashtable
-          [f (f fuel)]
+    (if g (g fuel)
           ; Everything failed -- we can't directly generate this ctc
-          [else #f])))
+          #f)))
 
 (define (generate/direct-env ctc fuel)
-  (let* ([keys (hash-keys (thread-cell-ref generate-env))]
+  (let* ([keys (hash-keys (generate-env))]
          [valid-ctcs (filter (λ (c)
                                 (or (equal? c ctc)
                                     (contract-stronger? c ctc)))
