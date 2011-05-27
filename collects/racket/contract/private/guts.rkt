@@ -176,7 +176,7 @@
   (cond
     [(contract-struct? x) x]
     [(and (procedure? x) (procedure-arity-includes? x 1)) 
-     (make-predicate-contract (or (object-name x) '???) x)]
+     (make-predicate-contract (or (object-name x) '???) x #f)]
     [(or (symbol? x) (boolean? x) (char? x) (null? x)) (make-eq-contract x)]
     [(or (bytes? x) (string? x)) (make-equal-contract x)]
     [(number? x) (make-=-contract x)]
@@ -292,13 +292,13 @@
 (define (check-flat-contract predicate) (coerce-flat-contract 'flat-contract predicate))
 (define (flat-contract predicate) (coerce-flat-contract 'flat-contract predicate))
 (define (check-flat-named-contract predicate) (coerce-flat-contract 'flat-named-contract predicate))
-(define (flat-named-contract name predicate)
+(define (flat-named-contract name predicate [generate #f])
   (cond
     [(and (procedure? predicate)
           (procedure-arity-includes? predicate 1))
-     (make-predicate-contract name predicate)]
+     (make-predicate-contract name predicate generate)]
     [(flat-contract? predicate)
-     (make-predicate-contract name (flat-contract-predicate predicate))]
+     (make-predicate-contract name (flat-contract-predicate predicate) generate)]
     [else
      (error 'flat-named-contract 
             "expected a flat contract or procedure of arity 1 as second argument, got ~e" 
@@ -502,7 +502,7 @@
       (and (regexp/c? that) (eq? (regexp/c-reg this) (regexp/c-reg that))))))
 
 
-(define-struct predicate-contract (name pred)
+(define-struct predicate-contract (name pred generate)
   #:property prop:flat-contract
   (build-flat-contract-property
    #:stronger
@@ -513,8 +513,9 @@
    #:name (λ (ctc) (predicate-contract-name ctc))
    #:first-order (λ (ctc) (predicate-contract-pred ctc))
    #:generate (λ (ctc)
-                 (let ([fn (predicate-contract-pred ctc)])
-                   (find-generate fn (contract-name ctc))))
+                 (or (predicate-contract-generate ctc)
+                     (let ([fn (predicate-contract-pred ctc)])
+                       (find-generate fn (contract-name ctc)))))
 #|
    #:tester (λ (ctc)
               (let ([pred (predicate-contract-pred ctc)])
@@ -523,5 +524,5 @@
                     (error "Contract generate Error 1")))))
    |#))
 
-(define (build-flat-contract name pred) (make-predicate-contract name pred))
+(define (build-flat-contract name pred [generate #f]) (make-predicate-contract name pred generate))
 

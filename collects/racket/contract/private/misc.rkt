@@ -702,7 +702,13 @@
 (define (>/c x)
   (flat-named-contract
    `(>/c ,x)
-   (λ (y) (and (real? y) (> y x)))))
+   (λ (y) (and (real? y) (> y x)))
+   (λ (fuel)
+      (let ([gen (make-between/c x +inf.0)])
+            [res (gen fuel)]
+            (if (equal? res x)
+              recur
+              res)))))
 
 (define natural-number/c
   (flat-named-contract

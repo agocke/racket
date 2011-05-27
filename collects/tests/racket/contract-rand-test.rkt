@@ -13,7 +13,7 @@
 ;(test-contract-generation (flat-contract char?))
 (test-contract-generation (>=/c 0))
 (test-contract-generation (<=/c 0))
-;(test-contract-generation (>/c 0))
+(test-contract-generation (>/c 0))
 ;(test-contract-generation (string-len/c 10))
 ;(test-contract-generation (vector-immutableof negative?))
 (test-contract-generation (-> integer? boolean?))
