@@ -324,9 +324,10 @@
    #:name (λ (ctc) (predicate-contract-name ctc))
    #:first-order (λ (ctc) (predicate-contract-pred ctc))
    #:generate (λ (ctc)
-                 (or (predicate-contract-generate ctc)
-                     (let ([fn (predicate-contract-pred ctc)])
-                       (find-generate fn (contract-name ctc)))))
+                 (if (generate-ctc-fail? predicate-contract-generate)
+                   (let ([fn (predicate-contract-pred ctc)])
+                     (find-generate fn (contract-name ctc)))
+                   (predicate-contract-generate ctc)))
 #|
    #:tester (λ (ctc)
               (let ([pred (predicate-contract-pred ctc)])

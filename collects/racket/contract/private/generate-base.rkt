@@ -1,6 +1,8 @@
 #lang racket/base
 
 (provide
+  make-generate-ctc-fail
+  generate-ctc-fail?
  find-generate
  add-generate
  
@@ -18,6 +20,9 @@
  
 ;; generate 
 (define-struct env-item (ctc name))
+
+;; generate failure type
+(define-struct generate-ctc-fail ())
 
 ;; hash tables
 (define freq-hash (make-hash))
