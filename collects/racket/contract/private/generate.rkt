@@ -137,28 +137,32 @@
 ;                   v)]))
 ;        #f)))
 
-; generate : contract -> ??
+; generate : contract int -> ctc value or generate-ctc-fail
 (define (contract-generate ctc fuel)
- (let ([options (permute (list generate/direct
+ (let ([def-ctc (coerce-contract 'contract-generate ctc)]
+       [options (permute (list generate/direct
                                generate/direct-env
                                generate/indirect-env))])
    (parameterize ([generate-env (make-hash)])
      ; choose randomly
-     (or (for/or ([option (in-list options)])
-                 (option ctc fuel)) 
-         (error "Unable to construct any generator for contract: ~a"
+     (or (for/or ([option (in-list options)]
+                  #:when (not (generate-ctc-fail? option)))
+                 (printf "option: ~s\n" option)
+                 (option def-ctc fuel)) 
+         (error 'contract-generate
+                "Unable to construct any generator for contract: ~e"
                 ctc)))))
 
 ; generate/direct :: contract -> (int int -> value for contract)
 ; Attempts to make a generator that generates values for this contract
-; directly. Returns #f if making a generator fails.
+; directly. Returns generate-ctc-fail if making a generator fails.
 (define (generate/direct ctc fuel)
-  (let* ([def-ctc (coerce-contract 'generate ctc)]
-         [g (contract-struct-generate def-ctc)])
+  (let ([g (contract-struct-generate ctc)])
     ; Check if the contract has a direct generate attached
-    (if g (g fuel)
-          ; Everything failed -- we can't directly generate this ctc
-          #f)))
+    (if (generate-ctc-fail? g)
+      ; Everything failed -- we can't directly generate this ctc
+      g 
+      (g fuel))))
 
 (define (generate/direct-env ctc fuel)
   (let* ([keys (hash-keys (generate-env))]
@@ -170,7 +174,7 @@
       (oneof (map (λ (key)
                      (hash-ref (thread-cell-ref key)))
                   valid-ctcs))
-      #f)))
+      (make-generate-ctc-fail))))
 
 (define (generate/indirect-env ctc fuel)
-  #f)
+  (make-generate-ctc-fail))

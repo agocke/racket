@@ -84,7 +84,7 @@
         (generate c)
         (begin
           (count-missing-generate (contract-struct-name c))
-          #f))))
+          (make-generate-ctc-fail)))))
 
 (define (contract-struct-exercise c)
   (let* ([prop (contract-struct-property c)]
@@ -174,8 +174,8 @@
          #:first-order [get-first-order #f]
          #:projection [get-projection #f]
          #:stronger [stronger #f]
-         #:generate [generate #f]
-         #:exercise [exercise #f])
+         #:generate [generate (make-generate-ctc-fail)]
+         #:exercise [exercise (make-generate-ctc-fail)])
 
   (let* ([get-name (or get-name (lambda (c) default-name))]
          [get-first-order (or get-first-order get-any?)]
@@ -278,8 +278,8 @@
          #:first-order [first-order #f]
          #:projection [projection #f]
          #:stronger [stronger #f]
-         #:generate [generate #f]
-         #:exercise [exercise #f] )
+         #:generate [generate (make-generate-ctc-fail)]
+         #:exercise [exercise (make-generate-ctc-fail)] )
 
   (let* ([name (or name default-name)]
          [first-order (or first-order any?)]

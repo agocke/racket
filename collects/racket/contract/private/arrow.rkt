@@ -446,6 +446,7 @@ v4 todo:
 
 (define (->-generate ctc)
   (let ([doms-l (length (base->-doms/c ctc))])
+    (printf "generate->: ~s\n" (base->-rngs/c ctc))
         (λ (fuel)
            (let ([rngs-gens (map (λ (c) (generate/direct c (/ fuel 2)))
                                  (base->-rngs/c ctc))])
