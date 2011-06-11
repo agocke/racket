@@ -446,17 +446,17 @@ v4 todo:
 
 (define (->-generate ctc)
   (let ([doms-l (length (base->-doms/c ctc))])
-    (printf "generate->: ~s\n" (base->-rngs/c ctc))
-        (λ (fuel)
-           (let ([rngs-gens (map (λ (c) (generate/direct c (/ fuel 2)))
-                                 (base->-rngs/c ctc))])
-             (if (member #f rngs-gens)
-               #f
-               (procedure-reduce-arity
-                 (λ args
-                    ;(hash-set! (generate-env) 
-                    (apply values rngs-gens))
-                 doms-l))))))
+    (λ (fuel)
+       (let ([rngs-gens (map (λ (c) (generate/choose c (/ fuel 2)))
+                             (base->-rngs/c ctc))])
+         (if (member #t (map generate-ctc-fail? rngs-gens))
+           (make-generate-ctc-fail)
+           (procedure-reduce-arity
+             (λ args
+
+                ;(hash-set! (generate-env) 
+                (apply values rngs-gens))
+             doms-l))))))
 
 (define (->-exercise ctc)
   (let* ([doms-gens (map contract-struct-generate (base->-doms/c ctc))]
