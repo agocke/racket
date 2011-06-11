@@ -698,18 +698,28 @@
 (define (</c x)
   (flat-named-contract
    `(</c ,x)
-   (λ (y) (and (real? y) (< y x)))))
+   (λ (y) (and (real? y) (< y x)))
+   (λ (fuel)
+      (let* ([max-n 2147483647]
+             [min-n -2147483648]
+             [upper (if (> x max-n)
+                      max-n
+                      x)])
+        (+ (random (- upper min-n))
+           min-n)))))
+
 (define (>/c x)
   (flat-named-contract
     `(>/c ,x)
     (λ (y) (and (real? y) (> y x)))
-    (λ (fuel)
-       (let recur ()
-         (let* ([gen (make-between/c x +inf.0)]
-                [res (gen fuel)])
-           (if (equal? res x)
-             (recur)
-             res))))))
+    (λ (fuel) 
+       (let* ([max-n 2147483647]
+              [min-n -2147483648]
+              [lower (if (< x min-n)
+                       min-n
+                       x)])
+         (+ (random (- max-n lower))
+            lower)))))
 
 (define natural-number/c
   (flat-named-contract
