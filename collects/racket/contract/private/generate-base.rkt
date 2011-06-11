@@ -3,19 +3,19 @@
 (provide
   make-generate-ctc-fail
   generate-ctc-fail?
- find-generate
- add-generate
- 
- print-freq
- get-freq
- merge-freq
- count-missing-generate
- 
- get-arg-names-space
- gen-arg-names
- env-item
- env-item-name
- env-item-ctc)
+  find-generate
+  add-generate
+
+  print-freq
+  get-freq
+  merge-freq
+  count-missing-generate
+
+  get-arg-names-space
+  gen-arg-names
+  env-item
+  env-item-name
+  env-item-ctc)
 
  
 ;; generate 
@@ -31,15 +31,15 @@
 ;; thread-cell
 (define arg-names-count (make-thread-cell 0))
 
-;; given a predicate returns a generate for this predicate or #f
+;; given a predicate returns a generate for this predicate or generate-ctc-fail
 (define (find-generate func [name "internal"])
-  (let ([gen (hash-ref gen-hash func #f)])
-    (if gen
-        gen
+  (let ([gen (hash-ref gen-hash func (make-generate-ctc-fail))])
+    (if (generate-ctc-fail? gen)
       (begin
-       ;          (printf "func ~a\n" name)
-       (count-missing-generate name)
-       #f))))
+        (printf "func ~a\n" name)
+        (count-missing-generate name)
+        gen)
+      gen)))
 
 (define (add-generate ctc gen)
   (hash-set! gen-hash ctc gen))

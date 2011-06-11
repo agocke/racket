@@ -137,21 +137,34 @@
 ;                   v)]))
 ;        #f)))
 
-; generate : contract int -> ctc value or generate-ctc-fail
+; generate : contract int -> ctc value or error
 (define (contract-generate ctc fuel)
- (let ([def-ctc (coerce-contract 'contract-generate ctc)]
-       [options (permute (list generate/direct
-                               generate/direct-env
-                               generate/indirect-env))])
+ (let ([def-ctc (coerce-contract 'contract-generate ctc)])
    (parameterize ([generate-env (make-hash)])
      ; choose randomly
-     (or (for/or ([option (in-list options)]
-                  #:when (not (generate-ctc-fail? option)))
-                 (printf "option: ~s\n" option)
-                 (option def-ctc fuel)) 
+     (let ([val (generate/choose def-ctc fuel)])
+       (if (generate-ctc-fail? val)
          (error 'contract-generate
                 "Unable to construct any generator for contract: ~e"
-                ctc)))))
+                ctc)
+         val)))))
+
+; Iterates through generation methods until failure. Returns
+; generate-ctc-fail if no value could be generated
+(define (generate/choose ctc fuel)
+ (let ([options (permute (list generate/direct
+                               generate/direct-env
+                               generate/indirect-env))])
+   ; choose randomly
+   (let trygen ([options options])
+     (if (empty? options)
+       (make-generate-ctc-fail)
+       (let* ([option (car options)]
+              [val (option ctc fuel)])
+         (if (generate-ctc-fail? val)
+           (trygen (cdr options))
+           (begin (printf "option: ~s\n" option)
+                  val)))))))
 
 ; generate/direct :: contract -> (int int -> value for contract)
 ; Attempts to make a generator that generates values for this contract
