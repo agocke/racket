@@ -456,7 +456,7 @@ v4 todo:
                 ; Make sure that the args match the contract
                 (begin ;(contract-struct-exercise ctc (/ fuel 2) args)
                        ; Stash the valid value
-                       (env-stash (generate-env) ctc args)
+                       ;(env-stash ctc args)
                        (apply values rngs-gens)))
              doms-l))))))
 

@@ -6,7 +6,6 @@
          racket/list)
 
 (provide ;use-env
-         generate-env
          env-stash
 
          contract-generate
@@ -23,9 +22,9 @@
 
 ; Adds a new contract and value to the environment if
 ; they don't already exist
-(define (env-stash env ctc val)
-  (let* ([curvals (hash-ref env ctc (list))])
-    (hash-set! env ctc (cons val curvals))))
+(define (env-stash ctc val)
+  (let* ([curvals (hash-ref (generate-env) ctc (list))])
+    (hash-set! (generate-env) ctc (cons val curvals))))
 
 ;; hash tables
 ;(define freq-hash (make-hash))
@@ -177,8 +176,7 @@
               [val (option ctc fuel)])
          (if (generate-ctc-fail? val)
            (trygen (cdr options))
-           (begin (printf "option: ~s\n" option)
-                  val)))))))
+                  val))))))
 
 ; generate/direct :: contract int -> (int -> value for contract)
 ; Attempts to make a generator that generates values for this contract
@@ -193,7 +191,7 @@
 
 (define (generate/direct-env ctc fuel)
   ; TODO: find out how to make negative test cases
-  (env-stash (generate-env) (coerce-contract 'char? char?) #\a)
+  (env-stash (coerce-contract 'char? char?) #\a)
   (let* ([keys (hash-keys (generate-env))]
          [valid-ctcs (filter (λ (c)
                                 (or (equal? c ctc)
