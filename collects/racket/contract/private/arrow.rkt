@@ -453,31 +453,36 @@ v4 todo:
            (make-generate-ctc-fail)
            (procedure-reduce-arity
              (λ args
-
-                ;(hash-set! (generate-env) 
-                (apply values rngs-gens))
+                ; Make sure that the args match the contract
+                (begin ;(contract-struct-exercise ctc (/ fuel 2) args)
+                       ; Stash the valid value
+                       (env-stash (generate-env) ctc args)
+                       (apply values rngs-gens)))
              doms-l))))))
 
-(define (->-exercise ctc)
-  (let* ([doms-gens (map contract-struct-generate (base->-doms/c ctc))]
-         [rngs-exercises (map contract-struct-exercise (base->-rngs/c ctc))])
-    ;(printf "doms-gens: ~a, rngs-exercises: ~a\n" doms-gens rngs-exercises)
-    (if (or (member #f doms-gens)
-            (member #f rngs-exercises))
-        #f
-        (λ (f n-tests size env)
-          (for ([i (in-range n-tests)])
-            ;(printf "~a\n" doms-gens)
-            (let* ([gen-args (map (λ (g)
-                                    (g 0 size env))
-                                  doms-gens)]
-                   [result (apply f gen-args)]
-                   [result-c (value-contract result)])
-              ;(printf "result was ~a\n" result)
-              ;(printf "res-c ~a\n" (value-contract result))
-              (if result-c
-                  ((contract-struct-exercise (value-contract result)) result 1 size env)
-                  #t)))))))
+(define (->-exercise ctc) 
+  (λ (fuel args)
+     (make-generate-ctc-fail)))
+      ;    (map (λ (c val) (contract-exercise c (/ fuel 2) v)) (base->-doms/c ctc))))
+ ; (let* ([doms-gens (map contract-struct-generate (base->-doms/c ctc))]
+ ;        [rngs-exercises (map contract-struct-exercise (base->-rngs/c ctc))])
+ ;   (printf "doms-gens: ~a, rngs-exercises: ~a\n" doms-gens rngs-exercises)))
+    ;(if (or (member #f doms-gens)
+    ;        (member #f rngs-exercises))
+    ;    #f
+    ;    (λ (f n-tests size env)
+    ;      (for ([i (in-range n-tests)])
+    ;        ;(printf "~a\n" doms-gens)
+    ;        (let* ([gen-args (map (λ (g)
+    ;                                (g 0 size env))
+    ;                              doms-gens)]
+    ;               [result (apply f gen-args)]
+    ;               [result-c (value-contract result)])
+    ;          ;(printf "result was ~a\n" result)
+    ;          ;(printf "res-c ~a\n" (value-contract result))
+    ;          (if result-c
+    ;              ((contract-struct-exercise (value-contract result)) result 1 size env)
+    ;              #t)))))))
 
 
 

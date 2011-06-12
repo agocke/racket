@@ -91,7 +91,7 @@
          [exercise (contract-property-exercise prop)])
     (if (procedure? exercise)
         (exercise c)
-        #f)))
+        (make-generate-ctc-fail))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;

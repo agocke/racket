@@ -101,9 +101,9 @@ override the default @racket[equal?] definition through the
                            [immutables (listof exact-nonnegative-integer?)
                                        null]
                            [guard (or/c procedure? #f) #f]
-                           [constructor-name (or/c symbol? #f) #f]
+                           [constructor-name (or/c symbol? #f) #f])
                            [generate (-> contract? (-> int? any/c))]
-                           [exercise (-> contract? (-> int? any/c any/c))])
+                           [exercise (-> contract? (-> int? any/c any/c))]
           (values struct-type?
                   struct-constructor-procedure?
                   struct-predicate-procedure?

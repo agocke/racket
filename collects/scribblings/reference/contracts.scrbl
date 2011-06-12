@@ -82,8 +82,11 @@ Constructs a @tech{flat contract} from @racket[predicate]. A value
 satisfies the contract if the predicate returns a true value.}
 
 
-@defproc[(flat-named-contract [type-name any/c] [predicate (or/c flat-contract? (any/c . -> . any))])
+@defproc[(flat-named-contract [type-name any/c] [predicate (or/c flat-contract? (any/c . -> . any))] [#:generate generator (-> contract (-> int? 'a-val))])
          flat-contract?]{
+
+The generator argument adds a generator for the flat-named-contract. See 
+@racket[contract-generate] for more information.
 
 On predicates like @racket[flat-contract], but the first argument must be the
 (quoted) name of a contract used for error reporting. 
@@ -2013,8 +2016,11 @@ makes a binary search tree contract, but one that is
   struct and returns a projection function that checks the contract.
   
 }
-<<<<<<< HEAD
-                              
-=======
+@section{Random generation}
 
->>>>>>> 0b337dc... rejiggered things to make sure all mzlib/contract exports are documented
+@defproc[(contract-generate [ctc contract?] [fuel int?] any/c)]{
+Attempts to randomly generate a value which will match the contract. The fuel
+argument limits the depth that the argument generation can go and thus the
+memory used. In order to know which contracts to generate, it may be necessary
+to add a generator for the generate keyword argument in @racket[struct]
+}

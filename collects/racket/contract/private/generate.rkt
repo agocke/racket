@@ -6,8 +6,12 @@
          racket/list)
 
 (provide ;use-env
-         env-item
+         generate-env
+         env-stash
+
          contract-generate
+         contract-exercise
+
          generate/direct
          generate/choose
 
@@ -16,6 +20,12 @@
 
 ; env parameter
 (define generate-env (make-parameter #f))
+
+; Adds a new contract and value to the environment if
+; they don't already exist
+(define (env-stash env ctc val)
+  (let* ([curvals (hash-ref env ctc (list))])
+    (hash-set! env ctc (cons val curvals))))
 
 ;; hash tables
 ;(define freq-hash (make-hash))
@@ -141,21 +151,34 @@
 ;                   v)]))
 ;        #f)))
 
-; generate : contract int -> ctc value or generate-ctc-fail
+; generate : contract int -> ctc value or error
 (define (contract-generate ctc fuel)
- (let ([def-ctc (coerce-contract 'contract-generate ctc)]
-       [options (permute (list generate/direct
-                               generate/direct-env
-                               generate/indirect-env))])
+ (let ([def-ctc (coerce-contract 'contract-generate ctc)])
    (parameterize ([generate-env (make-hash)])
      ; choose randomly
-     (or (for/or ([option (in-list options)]
-                  #:when (not (generate-ctc-fail? option)))
-                 (printf "option: ~s\n" option)
-                 (option def-ctc fuel)) 
+     (let ([val (generate/choose def-ctc fuel)])
+       (if (generate-ctc-fail? val)
          (error 'contract-generate
                 "Unable to construct any generator for contract: ~e"
-                ctc)))))
+                ctc)
+         val)))))
+
+; Iterates through generation methods until failure. Returns
+; generate-ctc-fail if no value could be generated
+(define (generate/choose ctc fuel)
+ (let ([options (permute (list generate/direct
+                               generate/direct-env
+                               ))])
+   ; choose randomly
+   (let trygen ([options options])
+     (if (empty? options)
+       (make-generate-ctc-fail)
+       (let* ([option (car options)]
+              [val (option ctc fuel)])
+         (if (generate-ctc-fail? val)
+           (trygen (cdr options))
+           (begin (printf "option: ~s\n" option)
+                  val)))))))
 
 ; generate/direct :: contract int -> (int -> value for contract)
 ; Attempts to make a generator that generates values for this contract
@@ -169,16 +192,17 @@
       (g fuel))))
 
 (define (generate/direct-env ctc fuel)
-  (hash-set! (generate-env) (coerce-contract 'char? char?) #\a)
+  ; TODO: find out how to make negative test cases
+  (env-stash (generate-env) (coerce-contract 'char? char?) #\a)
   (let* ([keys (hash-keys (generate-env))]
          [valid-ctcs (filter (λ (c)
                                 (or (equal? c ctc)
                                     (contract-stronger? c ctc)))
                              keys)])
     (if (> (length valid-ctcs) 0)
-      (oneof (map (λ (key)
-                     (hash-ref (generate-env) key))
-                  valid-ctcs))
+      (oneof (oneof (map (λ (key)
+                            (hash-ref (generate-env) key))
+                         valid-ctcs)))
       (make-generate-ctc-fail))))
 
 ; generate/indirect-env :: contract int -> (int -> value for contract)
@@ -189,17 +213,18 @@
     (make-generate-ctc-fail)
     (make-generate-ctc-fail)))
 
-; contract-exercise :: contracts int values -> nothing or ctc violation
-; This exercises the contracts on the values passed in to an arrow
-; contract to make sure that they satisfy the domain contracts
+; Given a contract and a value for that contract, contract-exercise
+; attempts to verify that the given value satisfies the contract.
 (define (contract-exercise ctc fuel vals)
-  ; Because almost everything doesn't have an exercise option
-  ; (pretty much only ->s), we simply hand off to the exercise
-  ; ctc field
-  (let* ([def-ctc (coerce-contract 'contract-exercise ctc)]
-         [e (contract-struct-exercise def-ctc)])
-    ; Make sure this field actually has an exercise option
-    ; If it doesn't somethings gone wrong
-    (if (generate-ctc-fail? e)
-      (error "No exercise option available for ~s\n" ctc)
-      (e fuel vals))))
+  ; If ctc is a contract for a predicate we can simply assert it  
+  (if (flat-contract? ctc)
+    (when ((flat-contract-predicate ctc) vals)
+      (error "contract-exercise failed on ctc: ~a with val: ~a\n"
+             ctc
+             vals))
+    ; Check to see if the value has an exercise field instead
+    (let* ([def-ctc (coerce-contract 'contract-exercise ctc)]
+           [e (contract-struct-exercise def-ctc)])
+      (if (generate-ctc-fail? e)
+        (error "No exercise option available for ~s\n" ctc)
+        (e fuel vals)))))
