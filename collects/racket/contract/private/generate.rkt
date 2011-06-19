@@ -9,7 +9,8 @@
          env-stash
 
          contract-generate
-         contract-exercise
+
+         check-ctc-val
 
          generate/direct
          generate/choose
@@ -211,18 +212,16 @@
     (make-generate-ctc-fail)
     (make-generate-ctc-fail)))
 
-; Given a contract and a value for that contract, contract-exercise
-; attempts to verify that the given value satisfies the contract.
-(define (contract-exercise ctc fuel vals)
-  ; If ctc is a contract for a predicate we can simply assert it  
+; Given a contract and a value, attempts to verify that the contract
+; matches the value given (generating arguments to functions if necessary)
+; True if matching, false otherwise
+(define (check-ctc-val ctc val fuel)
+  ; If the contract is flat we can check immediately
   (if (flat-contract? ctc)
-    (when ((flat-contract-predicate ctc) vals)
-      (error "contract-exercise failed on ctc: ~a with val: ~a\n"
-             ctc
-             vals))
-    ; Check to see if the value has an exercise field instead
-    (let* ([def-ctc (coerce-contract 'contract-exercise ctc)]
-           [e (contract-struct-exercise def-ctc)])
-      (if (generate-ctc-fail? e)
-        (error "No exercise option available for ~s\n" ctc)
-        (e fuel vals)))))
+    ((flat-contract-predicate ctc) val)
+    ; Our contract is not flat and not an ->, check for exercise field
+    (let ([ex-c (contract-struct-exercise ctc)])
+      (if (generate-ctc-fail? ex-c)
+        (error "Could not find exerciser for contract: ~a\n" ex-c)
+        (ex-c val fuel)))))
+

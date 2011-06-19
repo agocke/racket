@@ -36,7 +36,6 @@
   (let ([gen (hash-ref gen-hash func (make-generate-ctc-fail))])
     (if (generate-ctc-fail? gen)
       (begin
-        (printf "func ~a\n" name)
         (count-missing-generate name)
         gen)
       gen)))
@@ -57,7 +56,6 @@
                 (gen-arg-names (+ st-num 1) (- size 1)))]))
 
 (define (print-freq)
-  (printf "generate frequency:\n")
   (let* ([l (hash-map freq-hash (λ (k v)
                                  (list k v)))]
          [l-s (sort l (λ (e1 e2)

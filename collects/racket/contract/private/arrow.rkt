@@ -454,35 +454,29 @@ v4 todo:
            (procedure-reduce-arity
              (λ args
                 ; Make sure that the args match the contract
-                (begin ;(contract-struct-exercise ctc (/ fuel 2) args)
+                (begin (unless ((contract-struct-exercise ctc) args (/ fuel 2))
+                           (error "Arg(s) ~a do(es) not match contract ~a\n" ctc))
                        ; Stash the valid value
                        ;(env-stash ctc args)
                        (apply values rngs-gens)))
              doms-l))))))
 
 (define (->-exercise ctc) 
-  (λ (fuel args)
-     (make-generate-ctc-fail)))
-      ;    (map (λ (c val) (contract-exercise c (/ fuel 2) v)) (base->-doms/c ctc))))
- ; (let* ([doms-gens (map contract-struct-generate (base->-doms/c ctc))]
- ;        [rngs-exercises (map contract-struct-exercise (base->-rngs/c ctc))])
- ;   (printf "doms-gens: ~a, rngs-exercises: ~a\n" doms-gens rngs-exercises)))
-    ;(if (or (member #f doms-gens)
-    ;        (member #f rngs-exercises))
-    ;    #f
-    ;    (λ (f n-tests size env)
-    ;      (for ([i (in-range n-tests)])
-    ;        ;(printf "~a\n" doms-gens)
-    ;        (let* ([gen-args (map (λ (g)
-    ;                                (g 0 size env))
-    ;                              doms-gens)]
-    ;               [result (apply f gen-args)]
-    ;               [result-c (value-contract result)])
-    ;          ;(printf "result was ~a\n" result)
-    ;          ;(printf "res-c ~a\n" (value-contract result))
-    ;          (if result-c
-    ;              ((contract-struct-exercise (value-contract result)) result 1 size env)
-    ;              #t)))))))
+  (λ (args fuel)
+     (let* ([new-fuel (/ fuel 2)]
+            [gen-if-fun (λ (c v)
+                           ; If v is a function we need to gen the domain and call
+                           (if (procedure? v)
+                             (let ([newargs (map (λ (c) (contract-generate c new-fuel))
+                                                 (base->-doms/c c))])
+                               (let* ([result (call-with-values 
+                                                (λ () (apply v newargs))
+                                                list)]
+                                      [rngs (base->-rngs/c c)])
+                                 (andmap (λ (c v) (check-ctc-val c v new-fuel)) rngs result)))
+                             ; Delegate to check-ctc-val
+                             (check-ctc-val c v new-fuel)))])
+       (andmap gen-if-fun (base->-doms/c ctc) args))))
 
 
 

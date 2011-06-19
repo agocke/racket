@@ -19,8 +19,7 @@ differences from v3:
 (provide (all-from-out "contract/base.rkt")
  (except-out (all-from-out racket/contract/exists) ∀∃?)
  (all-from-out racket/contract/regions)
- contract-generate
- contract-exercise)
+ contract-generate)
 
 ;; ======================================================================
 ;; The alternate implementation disables contracts. Its useful mainly to
