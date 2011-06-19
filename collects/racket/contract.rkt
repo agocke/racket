@@ -13,3 +13,7 @@
                        "contract/private/legacy.rkt"
                        "contract/private/ds.rkt"))
 
+(provide (all-from-out "contract/base.rkt")
+ (except-out (all-from-out racket/contract/exists) ∀∃?)
+ (all-from-out racket/contract/regions)
+ contract-generate)
