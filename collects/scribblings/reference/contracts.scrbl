@@ -2018,7 +2018,7 @@ makes a binary search tree contract, but one that is
 }
 @section{Random generation}
 
-@defproc[(contract-generate [ctc contract?] [fuel int?] any/c)]{
+@defproc[(contract-generate [ctc contract?] [fuel int?]) any/c]{
 Attempts to randomly generate a value which will match the contract. The fuel
 argument limits the depth that the argument generation can go and thus the
 memory used. In order to know which contracts to generate, it may be necessary

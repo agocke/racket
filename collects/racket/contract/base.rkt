@@ -13,40 +13,36 @@
          "private/misc.rkt"
          "private/provide.rkt"
          "private/guts.rkt"
-         "private/legacy.rkt"
-         "private/ds.rkt"
-         "private/opt.rkt"
-         "private/generate.rkt"
-         "private/generate-base.rkt"
-         "private/env.rkt")
+         "private/opters.rkt"
+         "private/opt.rkt")
 
 (provide
- opt/c define-opt/c ;(all-from-out "private/opt.rkt")
- (except-out (all-from-out "private/ds.rkt")
-             lazy-depth-to-look)
-
  (except-out (all-from-out "private/arrow.rkt")
              making-a-method
              procedure-accepts-and-more?
              check-procedure
              check-procedure/more
-             base->-rngs/c
-             base->-doms/c
-             base->?
+
+             contracted-function?
+             contracted-function-proc
+             contracted-function-ctc
              make-contracted-function)
- (all-from-out "private/arr-i.rkt")
- (all-from-out "private/box.rkt")
- (all-from-out "private/hash.rkt")
- (all-from-out "private/vector.rkt")
- (all-from-out "private/struct.rkt")
+ (all-from-out "private/arr-i.rkt"
+               "private/box.rkt"
+               "private/hash.rkt"
+               "private/vector.rkt"
+               "private/struct.rkt")
+ (except-out (all-from-out "private/base.rkt")
+             current-contract-region)
  (except-out (all-from-out "private/misc.rkt")
              check-between/c
              check-unary-between/c)
  (all-from-out "private/provide.rkt")
- (all-from-out "private/base.rkt")
- (all-from-out "private/legacy.rkt")
- (except-out (all-from-out "private/guts.rkt")
-             check-flat-contract
-             check-flat-named-contract)
- (all-from-out "private/generate-base.rkt")
- (all-from-out "private/env.rkt"))
+
+ ;; from private/opt.rkt:
+ opt/c define-opt/c
+
+ ;; from private/guts.rkt
+ has-contract?
+ value-contract
+)

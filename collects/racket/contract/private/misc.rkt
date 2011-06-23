@@ -5,7 +5,9 @@
          racket/promise
          "prop.rkt"
          "blame.rkt"
-         "guts.rkt")
+         "guts.rkt"
+         "rand.rkt"
+         "generate.rkt")
 
 (provide flat-rec-contract
          flat-murec-contract
@@ -979,13 +981,13 @@
    (coerce-contract 'contract-projection ctc)))
 
 (define (flat-contract predicate) (coerce-flat-contract 'flat-contract predicate))
-(define (flat-named-contract name predicate)
+(define (flat-named-contract name predicate [generate (make-generate-ctc-fail)])
   (cond
     [(and (procedure? predicate)
           (procedure-arity-includes? predicate 1))
-     (make-predicate-contract name predicate)]
+     (make-predicate-contract name predicate generate)]
     [(flat-contract? predicate)
-     (make-predicate-contract name (flat-contract-predicate predicate))]
+     (make-predicate-contract name (flat-contract-predicate predicate) generate)]
     [else
      (error 'flat-named-contract 
             "expected a flat contract or procedure of arity 1 as second argument, got ~e" 

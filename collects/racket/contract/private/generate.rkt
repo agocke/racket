@@ -3,6 +3,7 @@
 (require "rand.rkt"
          "generate-base.rkt"
          "guts.rkt"
+         "prop.rkt"
          racket/list)
 
 (provide ;use-env
@@ -10,8 +11,6 @@
          env-stash
 
          contract-generate
-
-         check-ctc-val
 
          generate/direct
          generate/choose
@@ -217,13 +216,13 @@
 ; Given a contract and a value, attempts to verify that the contract
 ; matches the value given (generating arguments to functions if necessary)
 ; True if matching, false otherwise
-(define (check-ctc-val ctc val fuel)
-  ; If the contract is flat we can check immediately
-  (if (flat-contract? ctc)
-    ((flat-contract-predicate ctc) val)
-    ; Our contract is not flat and not an ->, check for exercise field
-    (let ([ex-c (contract-struct-exercise ctc)])
-      (if (generate-ctc-fail? ex-c)
-        (error "Could not find exerciser for contract: ~a\n" ex-c)
-        (ex-c val fuel)))))
+;(define (check-ctc-val ctc val fuel)
+;  ; If the contract is flat we can check immediately
+;  (if (flat-contract? ctc)
+;    ((flat-contract-predicate ctc) val)
+;    ; Our contract is not flat and not an ->, check for exercise field
+;    (let ([ex-c (contract-struct-exercise ctc)])
+;      (if (generate-ctc-fail? ex-c)
+;        (error "Could not find exerciser for contract: ~a\n" ex-c)
+;        (ex-c val fuel)))))
 

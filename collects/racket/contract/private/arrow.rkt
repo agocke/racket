@@ -23,6 +23,7 @@ v4 todo:
          "blame.rkt"
          "prop.rkt"
          "misc.rkt"
+         "generate.rkt"
          racket/stxparam)
 (require (for-syntax racket/base)
          (for-syntax "helpers.rkt")
@@ -473,9 +474,12 @@ v4 todo:
                                                 (λ () (apply v newargs))
                                                 list)]
                                       [rngs (base->-rngs/c c)])
-                                 (andmap (λ (c v) (check-ctc-val c v new-fuel)) rngs result)))
+                                 (andmap (λ (c v) 
+                                            ((contract-struct-exercise c) v new-fuel))
+                                         rngs 
+                                         result)))
                              ; Delegate to check-ctc-val
-                             (check-ctc-val c v new-fuel)))])
+                             ((contract-struct-exercise c) v new-fuel)))])
        (andmap gen-if-fun (base->-doms/c ctc) args))))
 
 
