@@ -458,7 +458,7 @@ v4 todo:
                 (begin (unless ((contract-struct-exercise ctc) args (/ fuel 2))
                            (error "Arg(s) ~a do(es) not match contract ~a\n" ctc))
                        ; Stash the valid value
-                       (env-stash (generate-env) ctc args)
+                       ;(env-stash (generate-env) ctc args)
                        (apply values rngs-gens)))
              doms-l))))))
 

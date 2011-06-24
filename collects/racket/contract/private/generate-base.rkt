@@ -33,12 +33,7 @@
 
 ;; given a predicate returns a generate for this predicate or generate-ctc-fail
 (define (find-generate func [name "internal"])
-  (let ([gen (hash-ref gen-hash func (make-generate-ctc-fail))])
-    (if (generate-ctc-fail? gen)
-      (begin
-        (count-missing-generate name)
-        gen)
-      gen)))
+  (hash-ref gen-hash func (make-generate-ctc-fail)))
 
 (define (add-generate ctc gen)
   (hash-set! gen-hash ctc gen))

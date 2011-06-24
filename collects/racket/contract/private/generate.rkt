@@ -6,8 +6,7 @@
          "prop.rkt"
          racket/list)
 
-(provide ;use-env
-         generate-env
+(provide generate-env
          env-stash
 
          contract-generate
@@ -79,78 +78,6 @@
 ;                          (boolean?-static fuel generate-env)))])))
 
 
-
-;; TODO: add new field to each contract. Move the code to guts
-;; The set of functions beelow needs to be moved into guts.rkt
-;; A new property for every contract has to be added with a name of
-;; can-generate-given (or some better name). The interface looks like this:
-;; can-generate-given: val -> (list-of ((list-of in-ctc), out-ctc, lambda-from-in-ctc-to-out-ctc))
-;; in other words given a val with a contract we get the contract of this value. Than we ;; get the implementation of can-generate-given from the contract property and using it 
-;; we generate a list of tuples. Each tuple shows one possible use of this val in generating 
-;; out-ctc give a number of in-ctc. The last element in the tuple is something that can
-;; be used to generate the right output given the right input.
-
-
-
-;(define (gen-opts have-val want-ctc have-ctc fuel env)
-;  (append (if (contract-stronger? have-ctc want-ctc)
-;              (list have-val)
-;              '())
-;          (if (base->? have-ctc)
-;              (let* ([gens (map contract-struct-generate
-;                                (base->-doms/c have-ctc))])
-;                (if (member #f gens)
-;                    '()
-;                    (let useful-results ([result-ctcs (base->-rngs/c have-ctc)]
-;                                         [i 0])
-;                      (if (empty? result-ctcs)
-;                          '()
-;                          (let* ([args (map (λ (g)
-;                                              ; what should n-tests and size be
-;                                              (g 0 0 env))
-;                                            gens)])
-;                            (append (gen-opts (λ ()
-;                                                (call-with-values (λ ()
-;                                                                    (apply have-val args))
-;                                                                  (λ args
-;                                                                    (list-ref args i)))) 
-;                                              want-ctc 
-;                                              (first result-ctcs)
-;                                              fuel
-;                                              env)
-;                                    (useful-results (rest result-ctcs) (+ i 1))))))))
-;                '())))
-
-;(define (use-env fuel ctc
-;                 #:test [is-test #f])
-;  (let ([options (flatten (map (λ (e-i)
-;                                 ;; contact-stronger? stronger weaker -> #
-;                                 (gen-opts (env-item-name e-i)
-;                                           ctc
-;                                           (env-item-ctc e-i)
-;                                           fuel
-;                                           (generate-env)))
-;                               (generate-env)))])
-;    
-;    (if (not (null? options))
-;        (values #t (if is-test
-;                       options
-;                       ((list-ref options (rand (length options))))))
-;        (values #f #f))))
-
-
-;(define (generate ctc env)
-;  (let ([g (contract-struct-generate ctc)]
-;        [e (let-values ([(res f) (use-env 0 0 env ctc)])
-;             res)])
-;    (if (or g e)
-;        (λ (n-tests size)
-;          (rand-choice
-;           [1/2 (g n-tests size env)]
-;           [else (let-values ([(res v) (use-env n-tests size env ctc)])
-;                   v)]))
-;        #f)))
-
 ; generate : contract int -> ctc value or error
 (define (contract-generate ctc fuel)
  (let ([def-ctc (coerce-contract 'contract-generate ctc)])
@@ -177,8 +104,7 @@
               [val (option ctc fuel)])
          (if (generate-ctc-fail? val)
            (trygen (cdr options))
-           (begin (printf "option: ~s\n" option)
-                  val)))))))
+                  val))))))
 
 ; generate/direct :: contract int -> (int -> value for contract)
 ; Attempts to make a generator that generates values for this contract
@@ -212,17 +138,4 @@
   (if (> fuel 0)
     (make-generate-ctc-fail)
     (make-generate-ctc-fail)))
-
-; Given a contract and a value, attempts to verify that the contract
-; matches the value given (generating arguments to functions if necessary)
-; True if matching, false otherwise
-;(define (check-ctc-val ctc val fuel)
-;  ; If the contract is flat we can check immediately
-;  (if (flat-contract? ctc)
-;    ((flat-contract-predicate ctc) val)
-;    ; Our contract is not flat and not an ->, check for exercise field
-;    (let ([ex-c (contract-struct-exercise ctc)])
-;      (if (generate-ctc-fail? ex-c)
-;        (error "Could not find exerciser for contract: ~a\n" ex-c)
-;        (ex-c val fuel)))))
 
