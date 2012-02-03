@@ -1,6 +1,7 @@
 #lang racket/base
 
-(require mzlib/port
+(require racket/contract
+         mzlib/port
          "private/portlines.rkt")
 (provide (except-out (all-from-out mzlib/port)
                      strip-shell-command-start)
@@ -94,3 +95,33 @@
 
 (define (call-with-input-bytes str proc)
   (with-input-from-x 'call-with-input-bytes 1 #t str proc))
+
+; Contract generator for output ports -- simply use /dev/null
+(contract-add-generate 
+  output-port?
+  (λ (fuel)
+     (make-output-port
+       'null
+       always-evt
+       (λ (s start end non-block? breakable?) (- end start))
+       void
+       (λ (special non-block? breakable?) #t)
+       (λ (s start end) (wrap-evt always-evt (λ (x) (- end start))))
+       (λ (special) always-evt))))
+
+
+; Contract generator for input ports -- randomly generate bytes or characters
+; as needed
+(contract-add-generate
+  input-port?
+  (λ (fuel)
+     (make-input-port
+       'random-generate
+       (λ (s)
+          (rand-choice
+            [1/50 eof]
+            [else (begin (bytes-set! s 0 (generate/direct byte? 0))
+                         1)]))
+       #f
+       void)))
+

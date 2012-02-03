@@ -2,6 +2,7 @@
 
 (require "blame.rkt"
          "generate-base.rkt"
+         "exercise-base.rkt"
          racket/performance-hint)
 
 (provide prop:contract
@@ -12,7 +13,8 @@
          contract-struct-stronger?
          contract-struct-generate
          contract-struct-exercise
-         
+         contract-struct-can-generate
+
          prop:flat-contract
          flat-contract-struct?
          
@@ -44,7 +46,8 @@
 ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define-struct contract-property [ name first-order projection stronger generate exercise ]
+(define-struct contract-property [ name first-order projection stronger 
+                                        generate exercise can-generate ]
   #:omit-define-syntaxes)
 
 (define (contract-property-guard prop info)
@@ -85,18 +88,22 @@
 
 (define (contract-struct-generate c)
   (let* ([prop (contract-struct-property c)]
-         [generate (contract-property-generate prop)])
-    (if (procedure? generate)
-      ; FIXME: Call needs to take multiple arguments
-        (generate c)
-        (make-generate-ctc-fail))))
+         [get-generate (contract-property-generate prop)]
+         [generate (get-generate c)])
+    generate))
 
 (define (contract-struct-exercise c)
   (let* ([prop (contract-struct-property c)]
-         [exercise (contract-property-exercise prop)])
-    (if (procedure? exercise)
-        (exercise c)
-        (make-generate-ctc-fail))))
+         [get-exercise (contract-property-exercise prop)]
+         [exercise (get-exercise c)])
+    exercise))
+
+(define (contract-struct-can-generate c)
+  (let* ([prop (contract-struct-property c)]
+         [get-can-generate (contract-property-can-generate prop)]
+         [can-generate (get-can-generate c)])
+    can-generate))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
@@ -190,8 +197,9 @@
          #:first-order [get-first-order #f]
          #:projection [get-projection #f]
          #:stronger [stronger #f]
-         #:generate [generate (make-generate-ctc-fail)]
-         #:exercise [exercise (make-generate-ctc-fail)])
+         #:generate [generate #f]
+         #:exercise [exercise #f]
+         #:can-generate [can-generate #f])
 
   (let* ([get-name (or get-name (lambda (c) default-name))]
          [get-first-order (or get-first-order get-any?)]
@@ -204,12 +212,24 @@
                   (projection-wrapper get-projection)))]
             [else (get-first-order-projection
                    get-name get-first-order)])]
-         [stronger (or stronger weakest)])
+         [stronger (or stronger weakest)]
+         [generate (or generate default-generate)]
+         [exercise (or exercise default-exercise)]
+         [can-generate (or can-generate default-can-generate)])
 
-    (mk get-name get-first-order get-projection stronger generate exercise)))
+    (mk get-name get-first-order get-projection stronger generate exercise can-generate )))
 
 (define build-contract-property
   (build-property make-contract-property 'anonymous-contract values))
+
+(define ((default-generate ctc) fuel)
+  (generate-ctc-fail ctc))
+
+(define ((default-exercise ctc) val fuel print-gen)
+  (exercise-missing (contract-struct-name ctc)))
+
+(define (default-can-generate ctc) empty-can-generate)
+(define (empty-can-generate mode) null)
 
 ;; Here we'll force the projection to always return the original value,
 ;; instead of assuming that the provided projection does so appropriately.
@@ -272,7 +292,7 @@
 ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define-struct make-contract [ name first-order projection stronger generate exercise ]
+(define-struct make-contract [ name first-order projection stronger generate exercise can-generate ]
   #:omit-define-syntaxes
   #:property prop:contract
   (build-contract-property
@@ -280,10 +300,19 @@
    #:first-order (lambda (c) (make-contract-first-order c))
    #:projection (lambda (c) (make-contract-projection c))
    #:stronger (lambda (a b) ((make-contract-stronger a) a b))
-   #:generate (lambda (c) ((make-contract-generate c)))
-   #:exercise (lambda (c) ((make-contract-exercise c)))))
+   #:generate 
+   (λ (c) 
+      (let ([generator (make-contract-generate c)])
+        (or generator
+            (default-generate c))))
+   #:exercise 
+   (λ (c) 
+      (let ([exerciser (make-contract-exercise c)])
+        (or exerciser
+            (default-exercise c))))
+   #:can-generate (λ (c) (make-contract-can-generate c))))
 
-(define-struct make-chaperone-contract [ name first-order projection stronger generate exercise ]
+(define-struct make-chaperone-contract [ name first-order projection stronger generate exercise can-generate ]
   #:omit-define-syntaxes
   #:property prop:chaperone-contract
   (build-chaperone-contract-property
@@ -291,10 +320,19 @@
    #:first-order (lambda (c) (make-chaperone-contract-first-order c))
    #:projection (lambda (c) (make-chaperone-contract-projection c))
    #:stronger (lambda (a b) ((make-chaperone-contract-stronger a) a b))
-   #:generate (lambda (c) (make-chaperone-contract-generate c))
-   #:exercise (lambda (c) (make-chaperone-contract-exercise c))))
+   #:generate 
+   (λ (c) 
+      (let ([generator (make-chaperone-contract-generate c)])
+        (or generator
+            (default-generate c))))
+   #:exercise 
+   (λ (c) 
+      (let ([exerciser (make-chaperone-contract-exercise c)])
+        (or exerciser
+            (default-exercise c))))
+   #:can-generate (λ (c) (make-chaperone-contract-can-generate c))))
 
-(define-struct make-flat-contract [ name first-order projection stronger generate exercise ]
+(define-struct make-flat-contract [ name first-order projection stronger generate exercise can-generate ]
   #:omit-define-syntaxes
   #:property prop:flat-contract
   (build-flat-contract-property
@@ -302,23 +340,36 @@
    #:first-order (lambda (c) (make-flat-contract-first-order c))
    #:projection (lambda (c) (make-flat-contract-projection c))
    #:stronger (lambda (a b) ((make-flat-contract-stronger a) a b))
-   #:generate (lambda (c) (make-flat-contract-generate c))
-   #:exercise (lambda (c) (make-flat-contract-exercise c))))
+   #:generate 
+   (λ (c)
+      (let ([generator (make-flat-contract-generate c)])
+        (or generator
+            (default-generate c))))
+   #:exercise
+   (λ (c)
+      (let ([exerciser (make-flat-contract-exercise c)])
+        (or exerciser
+            (λ (val fuel print-gen)
+               (unless ((make-flat-contract-first-order c) val)
+                 ((default-exercise c) val fuel print-gen))))))
+   #:can-generate (λ (c) (make-flat-contract-can-generate c))))
 
 (define ((build-contract mk default-name)
          #:name [name #f]
          #:first-order [first-order #f]
          #:projection [projection #f]
          #:stronger [stronger #f]
-         #:generate [generate (make-generate-ctc-fail)]
-         #:exercise [exercise (make-generate-ctc-fail)] )
+         #:generate [generate #f]
+         #:exercise [exercise #f]
+         #:can-generate [can-generate #f])
 
   (let* ([name (or name default-name)]
          [first-order (or first-order any?)]
          [projection (or projection (first-order-projection name first-order))]
-         [stronger (or stronger as-strong?)])
+         [stronger (or stronger as-strong?)]
+         [can-generate (or can-generate empty-can-generate)])
 
-    (mk name first-order projection stronger generate exercise)))
+    (mk name first-order projection stronger generate exercise can-generate)))
 
 (define (as-strong? a b)
   (procedure-closure-contents-eq?
