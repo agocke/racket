@@ -1,18 +1,22 @@
 #lang racket/base
 
-(require (for-syntax racket/base))
+(require (for-syntax scheme/base)
+         racket/sequence)
 
 (provide rand
          rand-seed
          rand-choice
          rand-range
+         rand-seq
          permute
+         permute-sequence
          oneof)
 
 
 ;; random generator
 
 (define my-generator (make-pseudo-random-generator))
+
 (define (rand [x #f]) 
   (if x
       (random x my-generator)
@@ -72,18 +76,39 @@
                   (cdr nums)
                   (cdr thunks))])]))))
 
-; oneof :: [a] -> a
-; Randomly chooses one of the values from a given list
+;; oneof :: [a] -> a
+;; Randomly chooses one of the values from a given list
 (define (oneof a-list) 
-  (list-ref a-list (random (length a-list))))
+  (list-ref a-list (rand (length a-list))))
 
 ; fisher-yates shuffle
 (define (permute a-list)
   (do ((v (list->vector a-list)) (n (length a-list) (- n 1)))
       ((zero? n) (vector->list v))
-    (let* ((r (random n)) (t (vector-ref v r)))
+    (let* ((r (rand n)) (t (vector-ref v r)))
       (vector-set! v r (vector-ref v (- n 1)))
       (vector-set! v (- n 1) t))))
 
+(define permute-sequence (compose permute sequence->list))
+
 (define (rand-range lower upper)
   (+ lower (rand (- upper lower))))
+
+;; rand-seq :: sequence? -> any
+;; Selects a random element from a sequence of unknown size. This is
+;; equivalent to the well-known "reservoir sampling" problem. Evaluates
+;; to #<void> if an empty sequence.
+(define (rand-seq seq)
+  (let-values ([(more gen) (sequence-generate seq)])
+    (if (more)
+      (let loop ([cur 2]
+                 [elem (gen)])
+        (if (not (more))
+          elem
+          (let ([next (gen)])
+            (loop (+ 1 cur)
+                  (if (<= (rand) (/ 1 cur))
+                    next
+                    elem)))))
+      (void))))
+
