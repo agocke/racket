@@ -56,6 +56,16 @@
            (<= #xE000 i #xFFFD)
            (<= #x10000 i #x10FFFF))))
 
+(contract-add-generate 
+  valid-char?
+  (λ (fuel)
+     (rand-choice [1/6 #x9]
+                  [1/6 #xA]
+                  [1/6 #xD]
+                  [1/6 (rand-range #x20 #xD7FF)]
+                  [1/6 (rand-range #xE000 #xFFFD)]
+                  [else (rand-range #x10000 #x10FFFF)])))
+
 ; Entity = (make-entity Location Location (U Nat Symbol))
 (define-struct (entity source) (text) #:transparent)
 
@@ -70,7 +80,7 @@
 (define permissive-xexprs (make-parameter #f))
 
 (define permissive/c
-  (make-contract
+  (make-flat-contract
    #:name 'permissive/c
    #:projection
    (lambda (blame)
@@ -81,7 +91,16 @@
           blame v "not in permissive mode"))))
    #:first-order
    (lambda (v)
-     (permissive-xexprs))))
+     (permissive-xexprs))
+   #:generate
+   (λ (fuel)
+      (let ([ctc (if (permissive-xexprs) any/c none/c)])
+        (generate/choose ctc fuel)))
+   #:stronger
+   (λ (this that)
+      (if (permissive-xexprs)
+        (contract-stronger? any/c that)
+        #t))))
 
 ; content? : TST -> Bool
 (define content/c
@@ -92,6 +111,7 @@
 
 (define location/c
   (or/c location? symbol? false/c))
+
 (provide/contract
  (struct location ([line exact-nonnegative-integer?]
                    [char exact-nonnegative-integer?]

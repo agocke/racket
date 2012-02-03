@@ -6,11 +6,15 @@
          "contract/private/basic-opters.rkt"
          "contract/private/legacy.rkt"
          "contract/private/ds.rkt"
-         "contract/private/generate.rkt")
+         "contract/private/generate.rkt"
+         "contract/private/rand.rkt"
+         "contract/private/exercise.rkt")
 (provide (all-from-out "contract/base.rkt"
                        "contract/combinator.rkt"
                        "contract/parametric.rkt"
                        "contract/region.rkt"
                        "contract/private/legacy.rkt"
                        "contract/private/ds.rkt"
-                       "contract/private/generate.rkt"))
+                       "contract/private/generate.rkt"
+                       "contract/private/rand.rkt"
+                       "contract/private/exercise.rkt"))
