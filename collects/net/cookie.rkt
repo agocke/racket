@@ -51,7 +51,8 @@
 
 (require srfi/13/string
          srfi/14/char-set
-         racket/serialize)
+         racket/serialize
+         racket/contract)
 (provide
  cookie-name?
  cookie-value?
@@ -336,6 +337,12 @@
        ;; The rest are tokens-like strings separated by dots
        (string-every char-set:hostname dom)
        (<= (string-length dom) 76)))
+
+;; Generator for valid-domain?
+(contract-add-generate 
+  valid-domain?
+  (λ (fuel) ".com"))
+
 
 (define (valid-path? v)
   (and (string? v) (rfc2109:value? v)))

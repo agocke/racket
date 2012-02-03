@@ -158,7 +158,7 @@
   (cond
     [(contract-struct? x) x]
     [(and (procedure? x) (procedure-arity-includes? x 1)) 
-     (make-predicate-contract (or (object-name x) '???) x (make-generate-ctc-fail))]
+     (make-predicate-contract (or (object-name x) '???) x (generate-ctc-fail x))]
     [(or (symbol? x) (boolean? x) (char? x) (null? x) (keyword? x)) (make-eq-contract x)]
     [(or (bytes? x) (string? x)) (make-equal-contract x)]
     [(number? x) (make-=-contract x)]
@@ -342,5 +342,5 @@
 
 (define (check-flat-named-contract predicate) (coerce-flat-contract 'flat-named-contract predicate))
 (define (check-flat-contract predicate) (coerce-flat-contract 'flat-contract predicate))
-(define (build-flat-contract name pred [generate (make-generate-ctc-fail)])
+(define (build-flat-contract name pred [generate (generate-ctc-fail #f)])
   (make-predicate-contract name pred generate))

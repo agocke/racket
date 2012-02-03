@@ -2,10 +2,13 @@
 
 (require (for-syntax racket/base)
          racket/promise
+         racket/sequence
+         "exercise-base.rkt"
          "prop.rkt"
          "blame.rkt"
          "guts.rkt"
          "rand.rkt"
+         "generate-base.rkt"
          "generate.rkt")
 
 (provide flat-rec-contract
@@ -143,6 +146,46 @@
                   (make-chaperone-multi-or/c flat-contracts ho-contracts)
                   (make-impersonator-multi-or/c flat-contracts ho-contracts))]))))]))
 
+;; Generator for or/c contracts
+(define (or/c-generate ctcs)
+  (define filtered-ctcs (filter (λ (c) (not (contract-stronger? c none/c)))
+                                ctcs))
+  ;; Try to generate a random value from  the or/c and pick one of the results
+  ;; at random. Fail if all of the results produce generate-ctc-fail
+  (define (generate-all fuel)
+    (let ([perm-seq (sequence-map (λ (c) (generate/choose c fuel))
+                                  (in-list (permute filtered-ctcs)))])
+      (let-values ([(more? get-next) (sequence-generate perm-seq)])
+        (let loop ()
+          (cond [(more?)
+                  (let ([next (get-next)])
+                    (if (generate-ctc-fail? next)
+                      (loop)
+                      next))]
+                [else (generate-ctc-fail ctcs)])))))
+  (λ (fuel)
+     (cond [(null? filtered-ctcs) (generate-ctc-fail none/c)]
+           [else (generate-all (/ fuel 2))])))
+
+;; Exerciser for or/c contracts
+(define (or/c-exercise flat-ctcs ho-ctcs)
+  ;(eprintf "flats ~s ho-ctcs ~s\n" flat-ctcs ho-ctcs)
+  (λ (val fuel)
+     (let loop ([flats flat-ctcs]
+                [hos ho-ctcs]
+                [missing #f]
+                [failed #f])
+       (define (check-ho ctc)
+         (let ([exerciser (contract-struct-exercise ctc)])
+           (cond [(procedure? exerciser) (exerciser val (/ fuel 2))]
+                 [else (loop flats (cdr hos) (cons ctc (or missing null)) #f)])))
+       (cond [(null? flats)
+              (cond [(not (null? hos)) (check-ho (car hos))]
+                    [missing (exercise-fail missing "no exerciser found")]
+                    [failed (exercise-fail failed "exercise failed")])]
+             [((flat-contract-predicate (car flats)) val) (void)]
+             [else (loop (cdr flats) val)]))))
+
 (define (single-or/c-projection ctc)
   (let ([c-proc (contract-projection (single-or/c-ho-ctc ctc))]
         [pred (single-or/c-pred ctc)])
@@ -176,6 +219,14 @@
                       this-ctcs
                       that-ctcs)))))
 
+(define (single-or/c-generate ctc)
+  (or/c-generate (cons (single-or/c-ho-ctc ctc)
+                       (single-or/c-flat-ctcs ctc))))
+
+(define (single-or/c-exercise ctc)
+  (or/c-exercise (single-or/c-flat-ctcs ctc)
+                 (list (single-or/c-ho-ctc ctc))))
+
 (define-struct single-or/c (pred flat-ctcs ho-ctc))
 
 (define-struct (chaperone-single-or/c single-or/c) ()
@@ -185,7 +236,9 @@
      #:projection single-or/c-projection
      #:name single-or/c-name
      #:first-order single-or/c-first-order
-     #:stronger single-or/c-stronger?)))
+     #:stronger single-or/c-stronger?
+     #:generate single-or/c-generate
+     #:exercise single-or/c-exercise)))
 
 (define-struct (impersonator-single-or/c single-or/c) ()
   #:property prop:contract
@@ -193,7 +246,9 @@
    #:projection single-or/c-projection
    #:name single-or/c-name
    #:first-order single-or/c-first-order
-   #:stronger single-or/c-stronger?))
+   #:stronger single-or/c-stronger?
+   #:generate single-or/c-generate
+   #:exercise single-or/c-exercise))
 
 (define (multi-or/c-proj ctc)
   (let* ([ho-contracts (multi-or/c-ho-ctcs ctc)]
@@ -268,6 +323,14 @@
          (and (= (length this-ctcs) (length that-ctcs))
               (andmap contract-stronger? this-ctcs that-ctcs)))))
 
+(define (multi-or/c-generate ctc)
+  (or/c-generate (append (multi-or/c-flat-ctcs ctc)
+                         (multi-or/c-ho-ctcs ctc))))
+
+(define (multi-or/c-exercise ctc)
+  (or/c-exercise (multi-or/c-flat-ctcs ctc)
+                 (multi-or/c-ho-ctcs ctc)))
+
 (define-struct multi-or/c (flat-ctcs ho-ctcs))
 
 (define-struct (chaperone-multi-or/c multi-or/c) ()
@@ -277,7 +340,9 @@
      #:projection multi-or/c-proj
      #:name multi-or/c-name
      #:first-order multi-or/c-first-order
-     #:stronger multi-or/c-stronger?)))
+     #:stronger multi-or/c-stronger?
+     #:generate multi-or/c-generate
+     #:exercise multi-or/c-exercise)))
 
 (define-struct (impersonator-multi-or/c multi-or/c) ()
   #:property prop:contract
@@ -285,7 +350,9 @@
    #:projection multi-or/c-proj
    #:name multi-or/c-name
    #:first-order multi-or/c-first-order
-   #:stronger multi-or/c-stronger?))
+   #:stronger multi-or/c-stronger?
+   #:generate multi-or/c-generate
+   #:exercise multi-or/c-exercise))
 
 (define-struct flat-or/c (pred flat-ctcs)
   #:property prop:flat-contract
@@ -327,10 +394,10 @@
    #:first-order
    (λ (ctc) (flat-or/c-pred ctc))
    #:generate
-   (λ (ctc)
-      (λ (fuel)
-         (generate/direct (oneof (flat-or/c-flat-ctcs ctc)) fuel)))
-         ))
+   (λ (ctc) (or/c-generate (flat-or/c-flat-ctcs ctc)))
+   #:exercise
+   (λ (ctc) (or/c-exercise (flat-or/c-flat-ctcs ctc) null))
+   ))
 
 
 (define (and-name ctc)
@@ -619,13 +686,11 @@
      (define (mk-rand-list so-far)
        (rand-choice
          [1/5 so-far]
-         [else (mk-rand-list (cons (generate/direct elem-ctc fuel)
-                                   so-far))]))
+         [else (let ([elem (generate/choose elem-ctc fuel)])
+                 (if (generate-ctc-fail? elem)
+                     elem
+                     (mk-rand-list (cons elem so-far))))]))
      (mk-rand-list (list))))
-
-(define (listof-exercise el-ctc)
-  (λ (f n-tests size env)
-    #t))
 
 (define-syntax (*-listof stx)
   (syntax-case stx ()
@@ -667,13 +732,18 @@
              (make-contract
               #:name ctc-name
               #:first-order fo-check
-              #:projection (ho-check (λ (p v) (map p v))))]))))]))
+              #:projection (ho-check (λ (p v) (map p v)))
+              #:generate (generate ctc))]))))]))
 
 (define listof-func (*-listof list? list listof listof-generate))
 (define/subexpression-pos-prop (listof x) (listof-func x))
 
 (define (non-empty-list? x) (and (pair? x) (list? (cdr x))))
-(define non-empty-listof-func (*-listof non-empty-list? non-empty-list non-empty-listof (λ (ctc) (make-generate-ctc-fail))))
+(define non-empty-listof-func (*-listof 
+                                non-empty-list? 
+                                non-empty-list 
+                                non-empty-listof 
+                                (λ (ctc) (generate-ctc-fail ctc))))
 (define/subexpression-pos-prop (non-empty-listof a) (non-empty-listof-func a))
 
 (define cons/c-main-function
@@ -837,7 +907,10 @@
                 (given/produced blame)
                 val))
              (delay (p-app (force val))))))
-       #:first-order promise?))))
+       #:first-order promise?
+       #:generate
+       (λ (fuel) (delay (generate/choose ctc fuel)))
+       ))))
 
 (define/subexpression-pos-prop (parameter/c x)
   (make-parameter/c (coerce-contract 'parameter/c x)))
@@ -898,7 +971,13 @@
    #:projection get-any-projection
    #:stronger (λ (this that) (any/c? that))
    #:name (λ (ctc) 'any/c)
-   #:first-order get-any?))
+   #:first-order get-any?
+   #:generate
+   (λ (ctc)
+      (λ (fuel)
+         (let ([c (generate/direct contract? fuel)])
+           (generate/choose c fuel))))
+   ))
 
 (define/final-prop any/c (make-any/c))
 
@@ -958,19 +1037,28 @@
   (contract-struct-projection
    (coerce-contract 'contract-projection ctc)))
 
+;; Add predicate generator for contract?
+(contract-add-generate 
+  contract?
+  (λ (fuel)
+     (let ([sample (oneof (get-env-contracts))])
+       (cond [(contract? sample) sample]
+             [else (coerce-contract 'contract?-generate sample)]))))
+
 (define (flat-contract predicate) (coerce-flat-contract 'flat-contract predicate))
-(define (flat-named-contract name predicate [generate #f])
-  (let ([generate (or generate (make-generate-ctc-fail))])
-    (cond
-      [(and (procedure? predicate)
-            (procedure-arity-includes? predicate 1))
-       (make-predicate-contract name predicate generate)]
-      [(flat-contract? predicate)
-       (make-predicate-contract name (flat-contract-predicate predicate) generate)]
-      [else
-       (error 'flat-named-contract 
-              "expected a flat contract or procedure of arity 1 as second argument, got ~e" 
-              predicate)])))
+(define (flat-named-contract name predicate [generate (generate-ctc-fail #f)] [exercise #f])
+  (cond
+    [(and (procedure? predicate)
+          (procedure-arity-includes? predicate 1))
+     (make-predicate-contract name predicate generate)]
+    [(flat-contract? predicate)
+     (make-predicate-contract name (flat-contract-predicate predicate) generate)]
+    [else
+     (error 'flat-named-contract 
+            "expected a flat contract or procedure of arity 1 as second argument, got ~e" 
+            predicate)]))
+
+
 
 (define printable/c
   (flat-named-contract

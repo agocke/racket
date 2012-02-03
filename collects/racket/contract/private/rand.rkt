@@ -1,18 +1,22 @@
 #lang racket/base
 
-(require (for-syntax racket/base))
+(require (for-syntax scheme/base)
+         racket/sequence)
 
 (provide rand
          rand-seed
          rand-choice
          rand-range
+         rand-seq
          permute
+         permute-sequence
          oneof)
 
 
 ;; random generator
 
 (define my-generator (make-pseudo-random-generator))
+
 (define (rand [x #f]) 
   (if x
       (random x my-generator)
@@ -72,8 +76,8 @@
                   (cdr nums)
                   (cdr thunks))])]))))
 
-; oneof :: [a] -> a
-; Randomly chooses one of the values from a given list
+;; oneof :: [a] -> a
+;; Randomly chooses one of the values from a given list
 (define (oneof a-list) 
   (list-ref a-list (random (length a-list))))
 
@@ -85,5 +89,42 @@
       (vector-set! v r (vector-ref v (- n 1)))
       (vector-set! v (- n 1) t))))
 
+(define permute-sequence (compose permute sequence->list))
+
 (define (rand-range lower upper)
   (+ lower (rand (- upper lower))))
+
+;; rand-seq :: sequence? -> any
+;; Selects a random element from a sequence of unknown size. This is
+;; equivalent to the well-known "reservoir sampling" problem. Evaluates
+;; to #<void> if an empty sequence.
+(define (rand-seq seq)
+  (let-values ([(more gen) (sequence-generate seq)])
+    (if (more)
+      (let loop ([cur 2]
+                 [elem (gen)])
+        (if (not (more))
+          elem
+          (let ([next (gen)])
+            (loop (+ 1 cur)
+                  (if (<= (rand) (/ 1 cur))
+                    next
+                    elem)))))
+      (void))))
+
+;;;;; unit tests ;;;;;;
+#|
+(and (= (rand-seq '(1)) 1)
+     ; Test that we get a roughly even distribution
+     (let* ([l '(1 2 3)]
+            [h (make-hash (for/list ([i l])
+                                    (cons i 0)))]
+            [trials 1000])
+       (begin (for ([i (in-range trials)])
+                   (hash-update! h 
+                                 (rand-seq l) 
+                                 (λ (k) (+ k 1))))
+              (for/and ([(k v) (in-hash h)])
+                       (< (abs (- v (/ trials 3))) 
+                          (/ trials 20))))))
+|#

@@ -12,6 +12,9 @@
 (define spec/c
   (listof (cons/c (listof symbol?) (listof symbol?))))
 
+;; Provided for testing
+(provide kid-lister/c)
+
 (provide/contract
  [spec/c contract?]
  [read-html-comments (parameter/c boolean?)]

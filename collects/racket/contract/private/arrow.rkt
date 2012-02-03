@@ -19,13 +19,16 @@ v4 todo:
 |#
 
 
-(require "guts.rkt"
+(require "exercise-base.rkt"
+         "guts.rkt"
          "blame.rkt"
          "prop.rkt"
          "misc.rkt"
+         "generate-base.rkt"
          "generate.rkt"
          racket/stxparam
          racket/performance-hint)
+
 (require (for-syntax racket/base)
          (for-syntax "helpers.rkt")
          (for-syntax syntax/stx)
@@ -54,6 +57,9 @@ v4 todo:
          make-contracted-function
          matches-arity-exactly?
          bad-number-of-results)
+
+; Provided for unit testing only
+;(provide test-fun)
 
 (define-syntax-parameter making-a-method #f)
 (define-syntax-parameter method-contract? #f)
@@ -559,42 +565,72 @@ v4 todo:
        (= (length (base->-rngs/c that)) (length (base->-rngs/c this)))
        (andmap contract-stronger? (base->-rngs/c this) (base->-rngs/c that))))
 
-(define (->-generate ctc)
-  (let ([doms-l (length (base->-doms/c ctc))])
-    (λ (fuel)
-       (let ([rngs-gens (map (λ (c) (generate/choose c (/ fuel 2)))
-                             (base->-rngs/c ctc))])
-         (if (member #t (map generate-ctc-fail? rngs-gens))
-           (make-generate-ctc-fail)
-           (procedure-reduce-arity
-             (λ args
-                ; Make sure that the args match the contract
-                (begin (unless ((contract-struct-exercise ctc) args (/ fuel 2))
-                           (error "Arg(s) ~a do(es) not match contract ~a\n" ctc))
-                       ; Stash the valid value
-                       ;(env-stash (generate-env) ctc args)
-                       (apply values rngs-gens)))
-             doms-l))))))
+;; check-ctcs :: (listof contracts) (listof vals) int? -> 
+;; (or/c #f generate-ctc-fail)
+(define (check-ctcs ctcs vals fuel [print-gen #f])
+  ; Exercise all exerciseable structs
+  (for/list ([c ctcs]
+             [v vals]
+             #:when (not (flat-contract? c)))
+    (let ([exerciser (contract-struct-exercise c)])
+      (if (procedure? exerciser)
+          (exerciser v fuel #:print-gen print-gen)
+          ; Should only happen for non-flat unexercisable
+          ; contracts
+          (exercise-fail c "no exerciser found")))))
 
-(define (->-exercise ctc) 
-  (λ (args fuel)
-     (let* ([new-fuel (/ fuel 2)]
-            [gen-if-fun (λ (c v)
-                           ; If v is a function we need to gen the domain and call
-                           (if (procedure? v)
-                             (let ([newargs (map (λ (c) (contract-random-generate c new-fuel))
-                                                 (base->-doms/c c))])
-                               (let* ([result (call-with-values 
-                                                (λ () (apply v newargs))
-                                                list)]
-                                      [rngs (base->-rngs/c c)])
-                                 (andmap (λ (c v) 
-                                            ((contract-struct-exercise c) v new-fuel))
-                                         rngs 
-                                         result)))
-                             ; Delegate to check-ctc-val
-                             ((contract-struct-exercise c) v new-fuel)))])
-       (andmap gen-if-fun (base->-doms/c ctc) args))))
+(define (->-generate ctc)
+  (λ (fuel)
+     (if (> fuel 0)
+         (let* ([doms-l (length (base->-doms/c ctc))]
+                [doms-ctcs (base->-doms/c ctc)]
+                [new-fuel (- fuel 1)]
+                [rngs-gens (gen-fail-map (λ (c) (generate/choose c new-fuel))
+                                         (base->-rngs/c ctc))]
+                [env (generate-env)])
+           (if (generate-ctc-fail? rngs-gens)
+               rngs-gens
+               (procedure-reduce-arity
+                 (λ args
+                    ; Make sure that the args match the contract
+                    (begin (check-ctcs doms-ctcs args new-fuel)
+                      ; No exception -- stash values
+                      (for ([c doms-ctcs]
+                            [a args])
+                        (env-stash env c a))
+                      ; Return the generated values
+                      (apply values rngs-gens)))
+                 doms-l)))
+         (generate-ctc-fail ctc))))
+
+;; Exercise takes a function and fuel, generates the domain of the function, and
+;; calls the function with the resulting domain. The results are then checked
+;; against the contract range. Throws an exn:fail:contract:exercise if any
+;; problems are encountered.
+(define (->-exercise ctc)
+  (λ (fun fuel #:print-gen [print-gen #f])
+     (let* ([new-fuel (- fuel 1)]
+            [doms-gen (gen-fail-map (λ (c) (generate/choose c new-fuel))
+                                    (base->-doms/c ctc))]
+            [env (generate-env)])
+       (if (generate-ctc-fail? doms-gen)
+           (exercise-gen-fail (generate-ctc-fail-ctc doms-gen))
+           (begin (and print-gen (print-gen doms-gen))
+                  (let* ([rngs (call-with-values (λ () (apply fun doms-gen))
+                                                 list)]
+                         [rng-ctcs (base->-rngs/c ctc)])
+                    (begin (check-ctcs rng-ctcs rngs new-fuel)
+                           ; stash results
+                           (for ([c rng-ctcs]
+                                 [r rngs])
+                                (env-stash env c r)))))))))
+
+; ->-can-generate is a procedure which produces a list of
+; contracts that the given procedure contract can generate
+(define (->-can-generate ctc)
+  ; FIXME: Only works for first-order contracts
+  (base->-rngs/c ctc))
+
 
 (define-struct (chaperone-> base->) ()
   #:property prop:chaperone-contract
@@ -605,7 +641,8 @@ v4 todo:
      #:first-order ->-first-order
      #:stronger ->-stronger?
      #:generate ->-generate
-     #:exercise ->-exercise)))
+     #:exercise ->-exercise
+     #:can-generate ->-can-generate)))
 
 (define-struct (impersonator-> base->) ()
   #:property prop:contract
@@ -615,7 +652,8 @@ v4 todo:
    #:first-order ->-first-order
    #:stronger ->-stronger?
    #:generate ->-generate
-   #:exercise ->-exercise))
+   #:exercise ->-exercise
+   #:can-generate ->-can-generate))
 
 (define (build--> name
                   pre post
@@ -2084,7 +2122,10 @@ v4 todo:
      ;; special case the (-> any/c ... any) contracts to be first-order checks only
      (with-syntax ([dom-len (- (length (syntax->list stx)) 2)]
                    [name (syntax->datum stx)])
-       #'(flat-named-contract 'name (λ (x) (and (procedure? x) (procedure-arity-includes? x dom-len #t)))))]
+       #'(flat-named-contract 'name 
+                              (λ (x) (and (procedure? x) (procedure-arity-includes? x dom-len #t)))
+                              ->-generate
+                              ->-exercise))]
     [(_ any/c boolean?)
      ;; special case (-> any/c boolean?) to use predicate/c
      (not (syntax-parameter-value #'making-a-method))

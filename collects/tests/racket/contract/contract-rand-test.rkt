@@ -5,6 +5,10 @@
          rackunit/text-ui
          net/url)
 
+(require "private-generate-tests.rkt"
+         "private-arrow-tests.rkt"
+         "rand-module-tests.rkt")
+
 (define (test-contract-generation ctc 
                                   [monkey-with values] 
                                   #:size [size 10])
@@ -21,6 +25,8 @@
    (check-not-exn (λ () (test-contract-generation byte?)))
    (check-not-exn (λ () (test-contract-generation bytes?)))
    (check-not-exn (λ () (test-contract-generation string?)))
+   (check-not-exn (λ () (test-contract-generation contract?)))
+   (check-not-exn (λ () (test-contract-generation symbol?)))
   ))
 
 (define flat-ctc-tests
@@ -33,6 +39,8 @@
     (check-not-exn (λ () (test-contract-generation (>/c 0))))
     (check-not-exn (λ () (test-contract-generation (</c 0))))
     (check-not-exn (λ () (test-contract-generation (or/c boolean? boolean?))))
+    (check-equal? (test-contract-generation #f) #f)
+    (check-equal? (test-contract-generation 10) 10)
     ))
 
 (define func-tests
@@ -43,18 +51,34 @@
                                                            integer?)) 0)))
     (check-not-exn (λ () ((test-contract-generation (-> integer?
                                                         integer?)) 1)))
-    (check-not-exn (λ () ((test-contract-generation 
+    (λ () ((test-contract-generation 
                              (-> (-> integer? 
                                      integer?)
                                  boolean?)) 
-                            +)))))
+                            +))
+    ))
+
+(define exercise-tests
+  (test-suite 
+    "Random contract exercise tests"
+    (check-not-exn
+      (λ () 
+         (contract-exercise-modules
+           '("collects/tests/racket/contract/rand-module-tests.rkt"))))))
 
 (define ctc-gen-tests
   (test-suite
-    "All random contract generation tests"
+    "Random contract generation tests"
     pred-tests
     flat-ctc-tests
     func-tests))
 
+(define all-module-tests
+  (test-suite
+    "All random contract tests"
+    ctc-gen-tests
+    exercise-tests
+    private/generate-tests
+    private/arrow-tests))
 
-(run-tests ctc-gen-tests)
+(run-tests all-module-tests)

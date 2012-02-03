@@ -2218,6 +2218,20 @@ parts of the contract system.
 }
 @section{Random generation}
 
+@defproc[(contract-random-test [quoted-module-path (or/c module-path?
+                                                         resolved-module-path?
+                                                         module-path-index?)]
+                               [fuel int? 5]) void?]{
+Attempts to load the given module, find all exports with attached contracts, 
+and randomly generate tests to try to break the exports. If an exception is 
+encountered it will be rethrown as an @racket[exn:fail:contract] exception.
+
+The exercise may fail for a number of reasons including non-flat contracts
+without a predefined exercise property or any of the generation problems
+found in @racket[contract-random-generate]. contract-random-test uses
+@racket[contract-random-generate] to generate its test cases.
+}
+
 @defproc[(contract-random-generate [ctc contract?] [fuel int?] [fail (-> any/c) (λ () (error ...))]) any/c]{
 Attempts to randomly generate a value which will match the contract. The fuel
 argument limits how hard the generator tries to generate a value matching the
