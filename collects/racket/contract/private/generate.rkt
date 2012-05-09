@@ -172,7 +172,7 @@
            [handler (λ (exn) (generate-ctc-fail fctc))])
       (begin (vector-set! ienv 0 ctc)
              (with-handlers ([exn:fail? handler])
-               ((contract-struct-exercise fctc) fun fuel))
+               ((contract-struct-exercise fctc) fun fuel #f))
              (let ([got-ctc (vector-ref ienv 1)])
                (if (not (number? got-ctc))
                  (vector-ref ienv 2)

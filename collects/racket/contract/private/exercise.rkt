@@ -48,7 +48,8 @@
                             (make-gen name)]
                           [exn:fail? (make-fail name)])
             (begin (eprintf "testing ~a\n" name)
-                   (exercise-fun func fuel #:print-gen print-gen)
+                   (for ([i (in-range num-tests)])
+                     (exercise-fun func fuel print-gen))
                    (set-stats-passed! run-stats 
                                       (+ 1 (stats-passed run-stats)))
                    (set-stats-total! run-stats

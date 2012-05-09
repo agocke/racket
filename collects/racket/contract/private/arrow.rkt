@@ -567,14 +567,14 @@ v4 todo:
 
 ;; check-ctcs :: (listof contracts) (listof vals) int? -> 
 ;; (or/c #f generate-ctc-fail)
-(define (check-ctcs ctcs vals fuel [print-gen #f])
+(define (check-ctcs ctcs vals fuel) 
   ; Exercise all exerciseable structs
   (for/list ([c ctcs]
              [v vals]
              #:when (not (flat-contract? c)))
     (let ([exerciser (contract-struct-exercise c)])
       (if (procedure? exerciser)
-          (exerciser v fuel #:print-gen print-gen)
+          (exerciser v fuel #f)
           ; Should only happen for non-flat unexercisable
           ; contracts
           (exercise-fail c "no exerciser found")))))
@@ -608,7 +608,7 @@ v4 todo:
 ;; against the contract range. Throws an exn:fail:contract:exercise if any
 ;; problems are encountered.
 (define (->-exercise ctc)
-  (λ (fun fuel #:print-gen [print-gen #f])
+  (λ (fun fuel print-gen)
      (let* ([new-fuel (- fuel 1)]
             [doms-gen (gen-fail-map (λ (c) (generate/choose c new-fuel))
                                     (base->-doms/c ctc))]

@@ -43,7 +43,8 @@
       (check-not-exn (λ ()
                         ((contract-struct-exercise str-rev-ctc)
                          str-rev
-                         5))))))
+                         5
+                         #f))))))
 
 (define private/arrow-tests
   (test-suite
