@@ -6,7 +6,25 @@
          "prop.rkt")
 
 (provide contract-exercise-modules
-         contract-exercise-funs)
+         contract-exercise-funs
+         exercise-or-fail
+         exercise-fail
+         exercise-gen-fail)
+
+(define (exercise-or-fail ctc
+                          val
+                          fuel
+                          print-gen
+                          #:num-tests [num-tests 1]
+                          #:fail 
+                          [fail
+                            (λ ()
+                               (exercise-fail ctc "No exerciser found"))])
+  (let ([exerciser (contract-struct-exercise ctc)])
+    (cond [(procedure? exerciser) 
+           (for ([i (in-range num-tests)])
+                (exerciser val fuel print-gen))]
+          [else (fail)])))
 
 ; contract-exercise-funs :: (list funcs) [(list func-names)] fuel -> .
 ;; The main worker function for exercising.
@@ -42,14 +60,13 @@
       (for ([func avail-funcs]
             [name func-names]
             #:when (has-contract? func))
-        (let* ([ctc (value-contract func)]
-               [exercise-fun (contract-struct-exercise ctc)])
+        (let* ([ctc (value-contract func)])
           (with-handlers ([exn:fail:contract:exercise:gen-fail?
                             (make-gen name)]
                           [exn:fail? (make-fail name)])
             (begin (eprintf "testing ~a\n" name)
-                   (for ([i (in-range num-tests)])
-                     (exercise-fun func fuel print-gen))
+                   (exercise-or-fail ctc func fuel print-gen
+                                     #:num-tests num-tests)
                    (set-stats-passed! run-stats 
                                       (+ 1 (stats-passed run-stats)))
                    (set-stats-total! run-stats

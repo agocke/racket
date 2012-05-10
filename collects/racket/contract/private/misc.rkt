@@ -3,13 +3,13 @@
 (require (for-syntax racket/base)
          racket/promise
          racket/sequence
-         "exercise-base.rkt"
          "prop.rkt"
          "blame.rkt"
          "guts.rkt"
          "rand.rkt"
          "generate-base.rkt"
-         "generate.rkt")
+         "generate.rkt"
+         "exercise.rkt")
 
 (provide flat-rec-contract
          flat-murec-contract
@@ -445,6 +445,27 @@
               (andmap contract-stronger?
                       this-ctcs
                       that-ctcs)))))
+
+(define (and/c-generate ctc)
+  (λ (fuel)
+     ; Try to find the strongest contract
+     (define (is-strongest? c cs)
+       (andmap (λ (that) (contract-stronger? c that)) cs))
+     (let* ([fuel (- fuel 1)]
+            [all-ctcs (base-and/c-ctcs ctc)]
+            [options (filter (is-strongest? all-ctcs) all-ctcs)])
+       (let loop ([options (permute options)])
+         (cond [(null? options) (generate-ctc-fail ctc)]
+               [else (let ([val (generate/choose (car options) fuel)])
+                       (cond [(generate-ctc-fail? val) (loop (cdr options))]
+                             [else val]))])))))
+
+(define (and/c-exercise ctc)
+  (λ (val fuel print-gen)
+     (let ([all-ctcs (base-and/c-ctcs ctc)])
+       (for ([c all-ctcs])
+         (exercise-or-fail c val fuel print-gen)))))
+
 
 (define-struct base-and/c (ctcs))
 (define-struct (first-order-and/c base-and/c) (predicates)

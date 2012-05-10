@@ -19,13 +19,13 @@ v4 todo:
 |#
 
 
-(require "exercise-base.rkt"
-         "guts.rkt"
+(require "guts.rkt"
          "blame.rkt"
          "prop.rkt"
          "misc.rkt"
          "generate-base.rkt"
          "generate.rkt"
+         "exercise.rkt"
          racket/stxparam
          racket/performance-hint)
 
@@ -566,18 +566,12 @@ v4 todo:
        (andmap contract-stronger? (base->-rngs/c this) (base->-rngs/c that))))
 
 ;; check-ctcs :: (listof contracts) (listof vals) int? -> 
-;; (or/c #f generate-ctc-fail)
 (define (check-ctcs ctcs vals fuel) 
   ; Exercise all exerciseable structs
   (for/list ([c ctcs]
              [v vals]
              #:when (not (flat-contract? c)))
-    (let ([exerciser (contract-struct-exercise c)])
-      (if (procedure? exerciser)
-          (exerciser v fuel #f)
-          ; Should only happen for non-flat unexercisable
-          ; contracts
-          (exercise-fail c "no exerciser found")))))
+    (exercise-or-fail c v fuel #f)))
 
 (define (->-generate ctc)
   (λ (fuel)
