@@ -253,6 +253,10 @@
 (define (rfc2068:token? s)
   (string-every char-set:token s))
 
+(contract-add-generate rfc2068:token?
+                       (λ (fuel)
+                          (char-set->string char-set:token)))
+
 ;;!
 ;;
 ;; (function (quoted-string? s))
@@ -317,10 +321,18 @@
   (and (string? s)
        (rfc2109:value? s)))
 
+(contract-add-generate cookie-value?
+                       (λ (fuel)
+                          (generate/choose rfc2109:value? fuel)))
+
 (define (cookie-name? s)
   (and (string? s) 
        ;; name:  token
        (rfc2068:token? s)))
+
+(contract-add-generate cookie-name?
+                       (λ (fuel)
+                          (generate/choose rfc2068:token? fuel)))
 
 ;; Host names as per RFC 1123 and RFC952, more or less, anyway. :-)
 (define char-set:hostname

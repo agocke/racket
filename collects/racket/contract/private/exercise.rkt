@@ -18,13 +18,13 @@
                           #:num-tests [num-tests 1]
                           #:fail 
                           [fail
-                            (λ ()
+                            (λ (ctc)
                                (exercise-fail ctc "No exerciser found"))])
   (let ([exerciser (contract-struct-exercise ctc)])
     (cond [(procedure? exerciser) 
            (for ([i (in-range num-tests)])
                 (exerciser val fuel print-gen))]
-          [else (fail)])))
+          [else (fail ctc)])))
 
 ; contract-exercise-funs :: (list funcs) [(list func-names)] fuel -> .
 ;; The main worker function for exercising.

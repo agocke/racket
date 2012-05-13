@@ -449,7 +449,7 @@
 (define (and/c-generate ctc)
   (λ (fuel)
      ; Try to find the strongest contract
-     (define (is-strongest? c cs)
+     (define ((is-strongest? cs) c)
        (andmap (λ (that) (contract-stronger? c that)) cs))
      (let* ([fuel (- fuel 1)]
             [all-ctcs (base-and/c-ctcs ctc)]
@@ -474,7 +474,10 @@
    #:projection first-order-and-proj
    #:name and-name
    #:first-order and-first-order
-   #:stronger and-stronger?))
+   #:stronger and-stronger?
+   #:generate and/c-generate
+   #:exercise and/c-exercise))
+
 (define-struct (chaperone-and/c base-and/c) ()
   #:property prop:chaperone-contract
   (parameterize ([skip-projection-wrapper? #t])
@@ -482,14 +485,18 @@
      #:projection and-proj
      #:name and-name
      #:first-order and-first-order
-     #:stronger and-stronger?)))
+     #:stronger and-stronger?
+     #:generate and/c-generate
+     #:exercise and/c-exercise)))
 (define-struct (impersonator-and/c base-and/c) ()
   #:property prop:contract
   (build-contract-property
    #:projection and-proj
    #:name and-name
    #:first-order and-first-order
-   #:stronger and-stronger?))
+   #:stronger and-stronger?
+   #:generate and/c-generate
+   #:exercise and/c-exercise))
 
 
 (define/subexpression-pos-prop (and/c . raw-fs)

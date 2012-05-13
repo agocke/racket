@@ -155,7 +155,7 @@
           (procedure? (car env-vals))
           ; Check all contracts that env-ctc to see if any is
           ; stronger than the target contract
-          (for/or ([c (contract-struct-can-generate env-ctc)])
+          (for/or ([c ((contract-struct-can-generate env-ctc) 'exercise)])
                   (contract-stronger? c target-ctc)))))
 
 (define (find-val-fun ctc env)

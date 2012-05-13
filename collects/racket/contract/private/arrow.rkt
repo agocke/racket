@@ -27,7 +27,8 @@ v4 todo:
          "generate.rkt"
          "exercise.rkt"
          racket/stxparam
-         racket/performance-hint)
+         racket/performance-hint
+         racket/list)
 
 (require (for-syntax racket/base)
          (for-syntax "helpers.rkt")
@@ -586,8 +587,9 @@ v4 todo:
                rngs-gens
                (procedure-reduce-arity
                  (λ args
-                    ; Make sure that the args match the contract
-                    (begin (check-ctcs doms-ctcs args new-fuel)
+                    (begin 
+                      ; Make sure that the args match the contract
+                      (check-ctcs doms-ctcs args new-fuel)
                       ; No exception -- stash values
                       (for ([c doms-ctcs]
                             [a args])
@@ -619,11 +621,33 @@ v4 todo:
                                  [r rngs])
                                 (env-stash env c r)))))))))
 
-; ->-can-generate is a procedure which produces a list of
-; contracts that the given procedure contract can generate
-(define (->-can-generate ctc)
-  ; FIXME: Only works for first-order contracts
-  (base->-rngs/c ctc))
+; ->-can-generate produces a list of contracts that the given procedure
+; contract can generate (not including then contract itself) mode = (or/c
+; 'exercise 'generate). 
+; If a function is exercised then we get the range, anything created by
+; exercising the range, and anything created by generating the domain 
+; If a function is generated then we get the domain and anything created by
+; exercising the domain
+(define ((->-can-generate ctc) mode)
+  (define ((can-gen mode) ctc)
+    ((contract-struct-can-generate ctc) mode))
+  (define dups-gen
+    (let ([doms/c (base->-doms/c ctc)]
+          [rngs/c (base->-rngs/c ctc)])
+      (cond [(equal? mode 'exercise)
+             (let ([ranges-ex (map (can-gen 'exercise) rngs/c)]
+                   [doms-gens (map (can-gen 'generate) doms/c)])
+               (flatten `(,doms-gens ,rngs/c ,ranges-ex)))]
+            [(equal? mode 'generate)
+             (let ([ranges-ex (map (can-gen 'exercise) rngs/c)])
+               (flatten `(,ranges-ex ,doms/c)))]
+            [else (error "Type error: should never happen")])))
+  dups-gen)
+;   (remove-duplicates dups-gen
+;                      (λ (a b)
+;                         (and (contract-stronger? a b)
+;                              (contract-stronger? b a))))
+;  (λ (mode) (eprintf "mode: ~s\n" mode)))
 
 
 (define-struct (chaperone-> base->) ()

@@ -19,11 +19,11 @@
           (value-contract palindrome)
           (value-contract palindrome->string)))
 
-(define-check (check-can-generate ctc expected-cts)
-  (for ([actual (contract-struct-can-generate ctc)]
-        [expected expected-cts])
-    (or (contract-stronger? actual expected)
-        (fail-check))))
+(define (check-can-generate ctc expected-cts)
+  (let ([avail ((contract-struct-can-generate ctc) 'exercise)])
+    (for ([actual ((contract-struct-can-generate ctc) 'exercise)]
+          [expected expected-cts])
+      (check contract-stronger? actual expected))))
 
 (define ->-can-generate-tests
   (test-suite
@@ -39,7 +39,11 @@
    (check-can-generate ((integer? . -> . char?)
                         . -> .
                         string?)
-                       `(,char? ,string?))
+                       `(,integer? ,string?))
+   (check-can-generate ((integer? . -> . char?)
+                        . -> .
+                        integer?)
+                       `(,integer?))
    ))
 
 (define ->-exercise-tests
