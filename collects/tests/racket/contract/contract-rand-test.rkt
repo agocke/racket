@@ -7,7 +7,7 @@
 
 (require "private-generate-tests.rkt"
          "private-arrow-tests.rkt"
-         "rand-module-tests.rkt")
+         "palindrome-tests.rkt")
 
 (define (test-contract-generation ctc 
                                   [monkey-with values] 
@@ -64,7 +64,7 @@
     (check-not-exn
       (λ () 
          (contract-exercise-modules
-           '("collects/tests/racket/contract/rand-module-tests.rkt"))))))
+           '("collects/tests/racket/contract/palindrome-tests.rkt"))))))
 
 (define ctc-gen-tests
   (test-suite

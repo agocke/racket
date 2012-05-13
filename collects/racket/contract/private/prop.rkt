@@ -323,7 +323,7 @@
         (or exerciser
             (λ (val fuel print-gen)
                (unless ((make-flat-contract-first-order c) val)
-                 (exercise-missing c))))))
+                 (exercise-missing (contract-struct-name c)))))))
    #:can-generate (λ (c) (make-flat-contract-can-generate c))))
 
 (define ((build-contract mk default-name)
@@ -354,7 +354,7 @@
   (generate-ctc-fail ctc))
 
 (define ((default-exercise ctc) val fuel print-gen)
-  (exercise-missing ctc))
+  (exercise-missing (contract-struct-name ctc)))
 
 (define ((default-can-generate ctc) mode)
   null)

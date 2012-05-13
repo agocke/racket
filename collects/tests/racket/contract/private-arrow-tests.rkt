@@ -1,10 +1,11 @@
 #lang racket/base
 
 (require racket/contract
+         racket/set
          rackunit
          rackunit/text-ui
          "../../../racket/contract/private/prop.rkt"
-         "rand-module-tests.rkt")
+         "palindrome-tests.rkt")
 
 (provide private/arrow-tests)
 
@@ -20,30 +21,30 @@
           (value-contract palindrome->string)))
 
 (define (check-can-generate ctc expected-cts)
-  (let ([avail ((contract-struct-can-generate ctc) 'exercise)])
-    (for ([actual ((contract-struct-can-generate ctc) 'exercise)]
-          [expected expected-cts])
-      (check contract-stronger? actual expected))))
+  (let ([actual (map (compose symbol->string contract-struct-name) 
+                     ((contract-struct-can-generate ctc) 'exercise))]
+        [expected (map symbol->string expected-cts)])
+    (check-equal? (sort actual string<?) (sort expected string<?))))
 
 (define ->-can-generate-tests
   (test-suite
    "->-can-generate tests"
    (check-can-generate (integer? . -> . integer?)
-                       `(,integer?))
+                       '(integer?))
    (check-can-generate (value-contract str-rev)
-                       `(,string?))
+                       '(string?))
    (check-can-generate (value-contract palindrome)
-                       `(,palindrome?))
+                       '(palindrome?))
    (check-can-generate (value-contract palindrome->string)
-                       `(,string?))
+                       '(string?))
    (check-can-generate ((integer? . -> . char?)
                         . -> .
                         string?)
-                       `(,integer? ,string?))
+                       '(integer? string?))
    (check-can-generate ((integer? . -> . char?)
                         . -> .
                         integer?)
-                       `(,integer?))
+                       '(integer?))
    ))
 
 (define ->-exercise-tests

@@ -642,12 +642,8 @@ v4 todo:
              (let ([ranges-ex (map (can-gen 'exercise) rngs/c)])
                (flatten `(,ranges-ex ,doms/c)))]
             [else (error "Type error: should never happen")])))
-  dups-gen)
-;   (remove-duplicates dups-gen
-;                      (λ (a b)
-;                         (and (contract-stronger? a b)
-;                              (contract-stronger? b a))))
-;  (λ (mode) (eprintf "mode: ~s\n" mode)))
+  (remove-duplicates dups-gen
+                     #:key contract-struct-name))
 
 
 (define-struct (chaperone-> base->) ()
