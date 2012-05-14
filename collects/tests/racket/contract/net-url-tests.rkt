@@ -4,7 +4,8 @@
          racket/set
          net/url
          slideshow
-         plot)
+         plot
+         syntax/to-string)
 
 (contract-add-generate url?
   (λ (fuel) (string->url "http://google.com")))
@@ -14,14 +15,18 @@
   (let ([all-ctcs (remove-duplicates (append-map hash-keys traces))])
     (for/list ([ctc all-ctcs])
       (let ([v vector-immutable])
-        (list (v 'exercise (hash-ref (first traces) ctc 0))
+        (list ctc 
+              (v 'exercise (hash-ref (first traces) ctc 0))
               (v 'generate/direct (hash-ref (second traces) ctc 0))
               (v 'generate/env (hash-ref (third traces) ctc 0))
               (v 'generate/indirect (hash-ref (fourth traces) ctc 0)))))))
 
 (define (plot-traces traces)
-  (slide (plot-pict (for/list ([trace (merge-traces (cdr traces))])
-                      (discrete-histogram trace)))))
+  (slide (plot-pict
+           (for/list ([trace (merge-traces (cdr traces))])
+             (eprintf "test ~s\n" trace)
+             (discrete-histogram (cdr trace)
+                                 #:label (syntax->string (car trace)))))))
 
 (define (trace all-traces)
   (eprintf "trace length ~s\n" (length all-traces))
