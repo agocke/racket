@@ -464,7 +464,7 @@
   (λ (val fuel print-gen)
      (let ([all-ctcs (base-and/c-ctcs ctc)])
        (for ([c all-ctcs])
-         (exercise-or-fail c val fuel print-gen)))))
+         (contract-random-exercise c val fuel print-gen)))))
 
 
 (define-struct base-and/c (ctcs))

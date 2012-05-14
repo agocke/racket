@@ -10,11 +10,20 @@
          get-env-contracts
          contract-add-generate
          
+         generate/direct-trace
+         generate/env-trace
+         generate/indirect-trace
+
          (struct-out generate-ctc-fail))
 
 ;; generate failure type
 (struct generate-ctc-fail (ctc))
                  
+; Generate tracing
+(define generate/direct-trace (make-parameter #f))
+(define generate/env-trace (make-parameter #f))
+(define generate/indirect-trace (make-parameter #f))
+
 ;; for/generate-fail
 ;; Like for/list, but if it hits a generate-ctc-fail, returns generate-ctc-fail
 (define (gen-fail-map fun lst)
@@ -26,6 +35,7 @@
 
 ; env parameter
 (define generate-env (make-parameter #f))
+
 
 (define make-pairs 
   (λ args

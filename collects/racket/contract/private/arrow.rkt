@@ -572,7 +572,7 @@ v4 todo:
   (for/list ([c ctcs]
              [v vals]
              #:when (not (flat-contract? c)))
-    (exercise-or-fail c v fuel #f)))
+    (contract-random-exercise c v fuel #f)))
 
 (define (->-generate ctc)
   (λ (fuel)
@@ -610,7 +610,8 @@ v4 todo:
                                     (base->-doms/c ctc))]
             [env (generate-env)])
        (if (generate-ctc-fail? doms-gen)
-           (exercise-gen-fail (generate-ctc-fail-ctc doms-gen))
+           (exercise-gen-fail (contract-struct-name 
+                                (generate-ctc-fail-ctc doms-gen)))
            (begin (and print-gen (print-gen doms-gen))
                   (let* ([rngs (call-with-values (λ () (apply fun doms-gen))
                                                  list)]

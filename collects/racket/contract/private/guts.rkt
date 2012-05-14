@@ -158,7 +158,7 @@
   (cond
     [(contract-struct? x) x]
     [(and (procedure? x) (procedure-arity-includes? x 1)) 
-     (make-predicate-contract (or (object-name x) '???) x (generate-ctc-fail x))]
+     (make-predicate-contract (or (object-name x) '???) x #f)]
     [(or (symbol? x) (boolean? x) (char? x) (null? x) (keyword? x)) (make-eq-contract x)]
     [(or (bytes? x) (string? x)) (make-equal-contract x)]
     [(number? x) (make-=-contract x)]
@@ -332,15 +332,14 @@
    #:first-order (λ (ctc) (predicate-contract-pred ctc))
    #:generate (λ (ctc)
                  (let ([generate (predicate-contract-generate ctc)])
-                   (if (generate-ctc-fail? generate)
-                     (let ([fn (predicate-contract-pred ctc)])
-                       (find-generate fn (predicate-contract-name ctc)))
-                     generate)))
+                   (or generate
+                       (let ([fn (predicate-contract-pred ctc)])
+                         (find-generate fn (predicate-contract-name ctc))))))
    #:exercise (λ (ctc)
                  (λ (val fuel) 
                     ((predicate-contract-pred ctc) val)))))
 
 (define (check-flat-named-contract predicate) (coerce-flat-contract 'flat-named-contract predicate))
 (define (check-flat-contract predicate) (coerce-flat-contract 'flat-contract predicate))
-(define (build-flat-contract name pred [generate (generate-ctc-fail #f)])
+(define (build-flat-contract name pred [generate #f])
   (make-predicate-contract name pred generate))

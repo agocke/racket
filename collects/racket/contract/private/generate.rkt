@@ -30,7 +30,6 @@
          make-env-from-funs
          valid-gen)
 
-
 ; generate : contract int -> ctc value or error
 (define (contract-random-generate ctc [fuel 5] #:funs [funs #f]
          #:fail [fail 
@@ -92,6 +91,13 @@
 ; directly. Returns generate-ctc-fail if making a generator fails.
 (define (generate/direct ctc fuel)
   ;(eprintf "generate/direct ~s\n" ctc)
+  (let ([direct-trace (generate/direct-trace)])
+    (when direct-trace
+      (let ([name (contract-struct-name ctc)])
+        (hash-update! direct-trace
+                      name
+                      (λ (i) (+ i 1))
+                      0))))
   (let* ([ctc (coerce-contract 'generate/direct ctc)]
          [g (contract-struct-generate ctc)])
     ; Check if the contract has a direct generate attached
@@ -104,6 +110,13 @@
 ; Returns it if found and generate-ctc-fail otherwise.
 (define (generate/direct-env ctc fuel)
   ;(eprintf "generate/direct-env ~s\n" ctc)
+  (let ([env-trace (generate/env-trace)])
+    (when env-trace
+      (let ([name (contract-struct-name ctc)])
+        (hash-update! env-trace
+                      name
+                      (λ (i) (+ i 1))
+                      0))))
   (let* ([ctc (coerce-contract 'generate-direct/env ctc)]
          [val (find-val (λ (c vs) (contract-stronger? c ctc))
                         (generate-env))])
@@ -117,6 +130,13 @@
 ;; as values in the environment will be considered.
 (define (generate/indirect-env ctc fuel)
   ;(eprintf "generate/indirect-env ~s\n" ctc)
+  (let ([indirect-trace (generate/indirect-trace)])
+    (when indirect-trace
+      (let ([name (contract-struct-name ctc)])
+        (hash-update! indirect-trace
+                      name
+                      (λ (i) (+ i 1))
+                      0))))
   (let ([ctc (coerce-contract 'generate/indirect-env ctc)]
         [fail (generate-ctc-fail ctc)])
     (if (> fuel 0)
