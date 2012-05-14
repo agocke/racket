@@ -60,10 +60,10 @@
                    [generate/env-trace (make-hash)]
                    [generate/indirect-trace (make-hash)])
         (run)
-        (trace (exercise-trace)
-               (generate/direct-trace)
-               (generate/env-trace)
-               (generate/indirect-trace)))
+        (list (exercise-trace)
+              (generate/direct-trace)
+              (generate/env-trace)
+              (generate/indirect-trace)))
     (run)))
 
 (define (do-exercise-epilog run-stats)
@@ -96,22 +96,25 @@
       (eprintf "Missing exerciser for ~a contract(s).\n" (get 'exm))))
   (let ([env (apply make-env-from-funs avail-funcs)])
     (parameterize ([generate-env env])
-      (for ([func avail-funcs]
-            [name func-names]
-            #:when (has-contract? func))
-        (let* ([ctc (value-contract func)]
-               [handler (exercise-exn-handler name run-stats)])
-          (with-handlers ([exn:fail:contract:exercise:gen-fail?
-                            (handler '(genf))]
-                          [exn:fail:contract:exercise:ex-missing?
-                            (handler '(exm))]
-                          [exn:fail?
-                            (handler '(total failed))])
-            (do-exercise-prolog name)
-            (do-top-level-exercise ctc func fuel 
-                                   print-gen num-tests trace)
-            (do-exercise-epilog run-stats))))))
-  (print-results))
+      (let ([runs
+              (for/list ([func avail-funcs]
+                         [name func-names]
+                         #:when (has-contract? func))
+                (let* ([ctc (value-contract func)]
+                       [handler (exercise-exn-handler name run-stats)])
+                  (with-handlers ([exn:fail:contract:exercise:gen-fail?
+                                    (handler '(genf))]
+                                  [exn:fail:contract:exercise:ex-missing?
+                                    (handler '(exm))]
+                                  [exn:fail?
+                                    (handler '(total failed))])
+                     (let* ([prolog (do-exercise-prolog name)]
+                            [run (do-top-level-exercise ctc func fuel print-gen
+                                                        num-tests trace)]
+                            [epilog (do-exercise-epilog run-stats)])
+                       run))))])
+        (print-results)
+        (trace runs)))))
 
 ;; contract-exercise-modules :: module-path [integer?]
 ;; The module-level testing function. It is called on a module path
