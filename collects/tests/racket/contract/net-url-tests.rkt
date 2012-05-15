@@ -22,11 +22,11 @@
               (v 'generate/indirect (hash-ref (fourth traces) ctc 0)))))))
 
 (define (plot-traces traces)
+  (eprintf "test ~s\n" traces)
   (slide (plot-pict
            (for/list ([trace (merge-traces (cdr traces))])
-             (eprintf "test ~s\n" trace)
              (discrete-histogram (cdr trace)
-                                 #:label (syntax->string (car trace)))))))
+                                 #:label (format "~s" (car trace)))))))
 
 (define (trace all-traces)
   (eprintf "trace length ~s\n" (length all-traces))
