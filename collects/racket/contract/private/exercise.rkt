@@ -4,7 +4,8 @@
          "generate.rkt"
          "generate-base.rkt"
          "guts.rkt"
-         "prop.rkt")
+         "prop.rkt"
+         "rand.rkt")
 
 (provide contract-exercise-modules
          contract-exercise-funs
@@ -49,6 +50,7 @@
 
 
 (define (do-exercise-prolog name)
+  (rand-seed 0)
   (eprintf "testing ~a\n" name))
 
 (define (do-top-level-exercise ctc func fuel print-gen num-tests trace name)
@@ -175,5 +177,7 @@
        module-code))
     (define exports (assoc 0 syn-table))
     (and exports
-         (map car (cdr exports)))]
+         (sort (map car (cdr exports))
+               (λ (a b) (string<? (symbol->string a)
+                                  (symbol->string b)))))]
    [else #f]))
