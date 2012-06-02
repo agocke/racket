@@ -1,6 +1,7 @@
 #lang racket/base
 
-(require mzlib/port
+(require racket/contract
+         mzlib/port
          "private/portlines.rkt")
 (provide (except-out (all-from-out mzlib/port)
                      strip-shell-command-start)
@@ -111,11 +112,17 @@
 
 ; Contract generator for input ports -- randomly generate bytes or characters
 ; as needed
-(define random-generated-in
-  (make-input-port
-    'random-generate
-    (λ (s)
-       (rand-choice
-         [1/4 eof]
-         [else (let ([b 
+(contract-add-generate
+  input-port?
+  (λ (fuel)
+     (make-input-port
+       'random-generate
+       (λ (s)
+          (rand-choice
+            [1/4 eof]
+            [else (let ([b (gen-pred/direct bytes? 5)])
+                    (bytes-copy! s 0 b)
+                    (bytes-length b))]))
+       #f
+       void)))
 

@@ -16,6 +16,7 @@
          contract-random-generate
 
          generate/direct
+         gen-pred/direct
          generate/choose
          
          generate-ctc-fail
