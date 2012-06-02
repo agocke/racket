@@ -31,6 +31,7 @@
           fuel
           print-gen
           #:tests [num-tests 1])
+  (eprintf "contract-random-exercise ~a\n" (contract-struct-name ctc))
   (let ([ex-trace (exercise-trace)])
     (when ex-trace
       (let ([name (contract-struct-name ctc)])
@@ -59,9 +60,9 @@
            ((error-display-handler) (exn-message exn) exn))))
 
 
-(define (do-exercise-prolog name)
+(define (do-exercise-prolog name ctc-name)
   (rand-seed 0)
-  (eprintf "testing ~a\n" name))
+  (eprintf "testing ~a ~a\n" name ctc-name))
 
 (define (do-top-level-exercise ctc func fuel print-gen num-tests trace name)
   (define (run)
@@ -123,7 +124,8 @@
                             (handler '(exm))]
                           [exn:fail?
                             (handler '(total failed))])
-            (let* ([prolog (do-exercise-prolog name)]
+            (let* ([prolog (do-exercise-prolog name
+                                               (contract-struct-name ctc))]
                    [run (do-top-level-exercise ctc func fuel print-gen
                                                num-tests trace name)]
                    [epilog (do-exercise-epilog run-stats)])

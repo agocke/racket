@@ -13,5 +13,4 @@
                                         url 
                                         netscape/string->url
                                         combine-url/relative
-                                        path/param)
-                           #:tests 10)
+                                        path/param))

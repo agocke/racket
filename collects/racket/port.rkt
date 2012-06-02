@@ -120,7 +120,7 @@
        (λ (s)
           (rand-choice
             [1/4 eof]
-            [else (let ([b (gen-pred/direct bytes? 5)])
+            [else (let ([b (generate/direct bytes? 5)])
                     (bytes-copy! s 0 b)
                     (bytes-length b))]))
        #f

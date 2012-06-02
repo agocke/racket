@@ -16,7 +16,6 @@
          contract-random-generate
 
          generate/direct
-         gen-pred/direct
          generate/choose
          
          generate-ctc-fail
@@ -67,15 +66,11 @@
   (let ([curvals (hash-ref env ctc (list))])
     (hash-set! env ctc (cons val curvals))))
 
-(define (gen-pred/direct pred fuel)
-  (let ([ctc (coerce-contract 'contract-direct-gen pred)])
-    (generate/direct ctc fuel)))
-
 
 ; Iterates through generation methods until failure. Returns
 ; generate-ctc-fail if no value could be generated
 (define (generate/choose ctc fuel)
-  (eprintf "generate/choose ~s\n" ctc)
+  (eprintf "generate/choose ~s\n" (contract-struct-name ctc))
   ; choose randomly until one method succeeds or all fail
   (let trygen ([options (permute (list generate/direct
                                        generate/direct-env
@@ -91,7 +86,7 @@
 ; Attempts to make a generator that generates values for this contract
 ; directly. Returns generate-ctc-fail if making a generator fails.
 (define (generate/direct ctc fuel)
-  (eprintf "generate/direct ~s\n" ctc)
+  (eprintf "generate/direct ~s\n" (contract-struct-name ctc))
   (let ([direct-trace (generate/direct-trace)])
     (when direct-trace
       (let ([name (contract-struct-name ctc)])
@@ -110,7 +105,7 @@
 ; Attemps to find a value with the given contract in the environment.
 ; Returns it if found and generate-ctc-fail otherwise.
 (define (generate/direct-env ctc fuel)
-  (eprintf "generate/direct-env ~s\n" ctc)
+  (eprintf "generate/direct-env ~s\n" (contract-struct-name ctc))
   (let ([env-trace (generate/env-trace)])
     (when env-trace
       (let ([name (contract-struct-name ctc)])
@@ -130,7 +125,7 @@
 ;; by calling functions in the environment. Note that only procedures 
 ;; as values in the environment will be considered.
 (define (generate/indirect-env ctc fuel)
-  (eprintf "generate/indirect-env ~s\n" ctc)
+  (eprintf "generate/indirect-env ~s\n" (contract-struct-name ctc))
   (let ([indirect-trace (generate/indirect-trace)])
     (when indirect-trace
       (let ([name (contract-struct-name ctc)])
