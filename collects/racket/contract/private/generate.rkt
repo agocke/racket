@@ -74,7 +74,7 @@
 ; Iterates through generation methods until failure. Returns
 ; generate-ctc-fail if no value could be generated
 (define (generate/choose ctc fuel)
-  ;(eprintf "generate/choose ~s\n" ctc)
+  (eprintf "generate/choose ~s\n" ctc)
   ; choose randomly until one method succeeds or all fail
   (let trygen ([options (permute (list generate/direct
                                        generate/direct-env
@@ -90,7 +90,7 @@
 ; Attempts to make a generator that generates values for this contract
 ; directly. Returns generate-ctc-fail if making a generator fails.
 (define (generate/direct ctc fuel)
-  ;(eprintf "generate/direct ~s\n" ctc)
+  (eprintf "generate/direct ~s\n" ctc)
   (let ([direct-trace (generate/direct-trace)])
     (when direct-trace
       (let ([name (contract-struct-name ctc)])
@@ -109,7 +109,7 @@
 ; Attemps to find a value with the given contract in the environment.
 ; Returns it if found and generate-ctc-fail otherwise.
 (define (generate/direct-env ctc fuel)
-  ;(eprintf "generate/direct-env ~s\n" ctc)
+  (eprintf "generate/direct-env ~s\n" ctc)
   (let ([env-trace (generate/env-trace)])
     (when env-trace
       (let ([name (contract-struct-name ctc)])
@@ -129,7 +129,7 @@
 ;; by calling functions in the environment. Note that only procedures 
 ;; as values in the environment will be considered.
 (define (generate/indirect-env ctc fuel)
-  ;(eprintf "generate/indirect-env ~s\n" ctc)
+  (eprintf "generate/indirect-env ~s\n" ctc)
   (let ([indirect-trace (generate/indirect-trace)])
     (when indirect-trace
       (let ([name (contract-struct-name ctc)])

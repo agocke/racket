@@ -94,3 +94,28 @@
 
 (define (call-with-input-bytes str proc)
   (with-input-from-x 'call-with-input-bytes 1 #t str proc))
+
+; Contract generator for output ports -- simply use /dev/null
+(contract-add-generate 
+  output-port?
+  (λ (fuel)
+     (make-output-port
+       'null
+       always-evt
+       (λ (s start end non-block? breakable?) (- end start))
+       void
+       (λ (special non-block? breakable?) #t)
+       (λ (s start end) (wrap-evt always-evt (λ (x) (- end start))))
+       (λ (special) always-evt))))
+
+
+; Contract generator for input ports -- randomly generate bytes or characters
+; as needed
+(define random-generated-in
+  (make-input-port
+    'random-generate
+    (λ (s)
+       (rand-choice
+         [1/4 eof]
+         [else (let ([b 
+

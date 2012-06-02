@@ -11,9 +11,19 @@
          contract-exercise-funs
          contract-random-exercise
          exercise-fail
-         exercise-gen-fail)
+         exercise-gen-fail
+
+         (struct-out single-exercise-trace))
 
 (define exercise-trace (make-parameter #f))
+
+(struct single-exercise-trace
+        (name
+          ctc-name
+          exercise-trace
+          generate/direct-trace
+          generate/env-trace
+          generate/indirect-trace))
 
 (define (contract-random-exercise 
           ctc
@@ -62,11 +72,13 @@
                    [generate/env-trace (make-hash)]
                    [generate/indirect-trace (make-hash)])
         (run)
-        (cons name
-              (list (exercise-trace)
-                    (generate/direct-trace)
-                    (generate/env-trace)
-                    (generate/indirect-trace))))
+        (single-exercise-trace
+          (symbol->string name)
+          (format "~s" (contract-struct-name ctc))
+          (exercise-trace)
+          (generate/direct-trace)
+          (generate/env-trace)
+          (generate/indirect-trace)))
     (run)))
 
 (define (do-exercise-epilog run-stats)
