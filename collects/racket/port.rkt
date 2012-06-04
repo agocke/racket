@@ -119,10 +119,9 @@
        'random-generate
        (λ (s)
           (rand-choice
-            [1/4 eof]
-            [else (let ([b (generate/direct bytes? 5)])
-                    (bytes-copy! s 0 b)
-                    (bytes-length b))]))
+            [1/50 eof]
+            [else (begin (bytes-set! s 0 (generate/direct byte? 0))
+                         1)]))
        #f
        void)))
 

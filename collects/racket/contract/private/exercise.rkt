@@ -1,6 +1,7 @@
 #lang racket/base
 
 (require "exercise-base.rkt"
+         "exercise-main.rkt"
          "generate.rkt"
          "generate-base.rkt"
          "guts.rkt"
@@ -12,10 +13,8 @@
          contract-random-exercise
          exercise-fail
          exercise-gen-fail
-
+         
          (struct-out single-exercise-trace))
-
-(define exercise-trace (make-parameter #f))
 
 (struct single-exercise-trace
         (name
@@ -25,67 +24,6 @@
           generate/env-trace
           generate/indirect-trace))
 
-(define (contract-random-exercise 
-          ctc
-          val
-          fuel
-          print-gen
-          #:tests [num-tests 1])
-  (eprintf "contract-random-exercise ~a\n" (contract-struct-name ctc))
-  (let ([ex-trace (exercise-trace)])
-    (when ex-trace
-      (let ([name (contract-struct-name ctc)])
-        (hash-update! ex-trace
-                      name
-                      (λ (i) (+ i 1))
-                      0))))
-  (for ([i (in-range num-tests)])
-       ((contract-struct-exercise ctc) val fuel print-gen)))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; exercise statistics and output
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(define (increment-keys run-stats keys)
-  (for ([k keys])
-       (hash-update! run-stats k (λ (i) (+ i 1)))))
-
-;; exercise-exn :: string? -> exception handler
-(define (((exercise-exn-handler fun-name run-stats) increments) exn)
-  (begin (increment-keys run-stats increments)
-         (eprintf "Got exception while processing function ~a\n" fun-name)
-         (if (or (exn:fail:contract:exercise:gen-fail? exn)
-                 (exn:fail:contract:exercise:ex-missing? exn))
-           (displayln (exn-message exn)
-                      (current-error-port))
-           ((error-display-handler) (exn-message exn) exn))))
-
-
-(define (do-exercise-prolog name ctc-name)
-  (rand-seed 0)
-  (eprintf "testing ~a ~a\n" name ctc-name))
-
-(define (do-top-level-exercise ctc func fuel print-gen num-tests trace name)
-  (define (run)
-    (contract-random-exercise ctc func fuel print-gen #:tests num-tests))
-  (if trace
-    (parameterize ([exercise-trace (make-hash)]
-                   [generate/direct-trace (make-hash)]
-                   [generate/env-trace (make-hash)]
-                   [generate/indirect-trace (make-hash)])
-        (run)
-        (single-exercise-trace
-          (symbol->string name)
-          (format "~s" (contract-struct-name ctc))
-          (exercise-trace)
-          (generate/direct-trace)
-          (generate/env-trace)
-          (generate/indirect-trace)))
-    (run)))
-
-(define (do-exercise-epilog run-stats)
-  (increment-keys run-stats '(passed total)))
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
 ; contract-exercise-funs :: (list funcs) [(list func-names)] fuel -> .
 ;; The main worker function for exercising.
 (define (contract-exercise-funs avail-funcs
@@ -93,15 +31,21 @@
                                 #:fuel [fuel 5]
                                 #:tests [num-tests 1]
                                 #:print-gen [print-gen #f]
-                                #:trace [trace #f])
+                                #:trace [trace #f]
+                                #:logging [logging #f])
+  ; Hash to hold all the run statistics
   (define run-stats 
     (make-hash (list '(total . 0)
                      '(passed . 0)
                      '(failed . 0)
                      '(genf . 0)
                      '(exm . 0))))
+
+  ; Holds trace information if trace is #t
   (define traces null)
-  (define (print-results)
+
+  ; Print the run statistics
+  (define (print-results run-stats)
     (define (get k) (hash-ref run-stats k))
     (eprintf "Ran ~s tests, got ~s passes and ~s failures.\n"
              (get 'total)
@@ -111,26 +55,89 @@
       (eprintf "Could not generate ~a contract(s).\n" (get 'genf)))
     (unless (zero? (get 'exm))
       (eprintf "Missing exerciser for ~a contract(s).\n" (get 'exm))))
-  (let ([env (apply make-env-from-funs avail-funcs)])
-    (parameterize ([generate-env env])
-      (for ([func avail-funcs]
-            [name func-names]
-            #:when (has-contract? func))
-        (let* ([ctc (value-contract func)]
-               [handler (exercise-exn-handler name run-stats)])
-          (with-handlers ([exn:fail:contract:exercise:gen-fail?
-                            (handler '(genf))]
-                          [exn:fail:contract:exercise:ex-missing?
-                            (handler '(exm))]
-                          [exn:fail?
-                            (handler '(total failed))])
-            (let* ([prolog (do-exercise-prolog name
-                                               (contract-struct-name ctc))]
-                   [run (do-top-level-exercise ctc func fuel print-gen
-                                               num-tests trace name)]
-                   [epilog (do-exercise-epilog run-stats)])
-              (set! traces (cons run traces))))))))
-  (print-results)
+
+  ; Current environment
+  (define env (apply make-env-from-funs avail-funcs))
+
+  ; Save the incoming ports for restoration afterwards
+  (define save-current-output #f)
+  (define save-current-input #f)
+
+  (define (do-prolog func-name ctc-name)
+    (rand-seed 0)
+    (eprintf "testing ~a ~a\n" func-name ctc-name))
+
+  (define (run-exercise run ctc ctc-name func-name)
+    (if trace
+        (parameterize ([exercise-trace (make-hash)]
+                       [generate/direct-trace (make-hash)]
+                       [generate/env-trace (make-hash)]
+                       [generate/indirect-trace (make-hash)])
+          (run)
+          (set! traces (cons (single-exercise-trace
+                               (symbol->string func-name)
+                               (format "~a" ctc-name)
+                               (exercise-trace)
+                               (generate/direct-trace)
+                               (generate/env-trace)
+                               (generate/indirect-trace))
+                             traces)))
+        (run)))
+
+  (define (do-epilog run-stats)
+    (increment-keys run-stats '(passed total)))
+
+  (define (increment-keys run-stats keys)
+    (for ([k keys])
+      (hash-update! run-stats k (λ (i) (+ i 1)))))
+
+  ;; exercise-exn :: string? -> exception handler
+  (define (((exercise-exn-handler fun-name run-stats) increments) exn)
+    (begin (increment-keys run-stats increments)
+           (eprintf "Got exception while processing function ~a\n" fun-name)
+           (if (or (exn:fail:contract:exercise:gen-fail? exn)
+                   (exn:fail:contract:exercise:ex-missing? exn))
+               (displayln (exn-message exn)
+                          (current-error-port))
+               ((error-display-handler) (exn-message exn) exn))))
+
+  ; Setup before the exercises
+  (set! save-current-output (current-output-port))
+  (current-output-port (generate/direct output-port? 0))
+  (set! save-current-input (current-input-port))
+  (current-input-port (generate/direct input-port? 0))
+
+  ; Do the exercises
+  (parameterize ([generate-env env]
+                 [exercise-logging logging])
+    (for ([func avail-funcs]
+          [func-name func-names]
+          #:when (has-contract? func))
+      (let* ([ctc (value-contract func)]
+             [ctc-name (contract-struct-name ctc)]
+             [handler (exercise-exn-handler func-name run-stats)])
+        (with-handlers ([exn:fail:contract:exercise:gen-fail?
+                          (handler '(genf))]
+                        [exn:fail:contract:exercise:ex-missing?
+                          (handler '(exm))]
+                        [exn:fail?
+                          (handler '(total failed))])
+          (do-prolog func-name ctc-name)
+          (run-exercise (λ ()
+                           (contract-random-exercise ctc
+                                                     func 
+                                                     fuel
+                                                     print-gen
+                                                     #:tests num-tests))
+                        ctc
+                        ctc-name
+                        func-name)
+          (do-epilog run-stats)))))
+
+  ; Done exercising: cleanup and print the results (and traces, if enabled)
+  (current-output-port save-current-output)
+  (current-input-port save-current-input)
+  (print-results run-stats)
   (when trace (trace traces)))
 
 ;; contract-exercise-modules :: module-path [integer?]
@@ -142,10 +149,13 @@
                                    #:fuel [fuel 5]
                                    #:tests [num-tests 1]
                                    #:print-gen [print-gen #f]
-                                   #:trace [trace #f])
+                                   #:trace [trace #f]
+                                   #:logging [logging #f])
   (define (get-funs+names mod)
     (let* ([export-names (get-exports mod)]
-           [minus-excluded (remove* exclude export-names)]
+           [minus-excluded (if export-names
+                               (remove* exclude export-names)
+                               null)]
            [exports (for/list ([provided minus-excluded])
                       (with-handlers ([exn:fail? (λ (exn) #f)])
                         (dynamic-require mod provided)))])
@@ -163,7 +173,8 @@
                             #:fuel fuel
                             #:tests num-tests
                             #:print-gen print-gen
-                            #:trace trace)))
+                            #:trace trace
+                            #:logging logging)))
 
 
 ;; get-exports : module-path -> (or/c #f (listof symbol))

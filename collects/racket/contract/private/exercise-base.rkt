@@ -6,7 +6,10 @@
          exercise-missing
          (struct-out exn:fail:contract:exercise)
          (struct-out exn:fail:contract:exercise:gen-fail)
-         (struct-out exn:fail:contract:exercise:ex-missing))
+         (struct-out exn:fail:contract:exercise:ex-missing)
+         
+         exercise-trace
+         exercise-logging)
 
 (struct exn:fail:contract:exercise exn:fail:contract (ctc-name))
 
@@ -27,3 +30,9 @@
 
 (define (exercise-missing ctc-name)
   (exercise-fail ctc-name "No exerciser" exn:fail:contract:exercise:ex-missing))
+
+; Exercise tracing
+(define exercise-trace (make-parameter #f))
+
+; Logging for patterns of exercises and generates
+(define exercise-logging (make-parameter #f))

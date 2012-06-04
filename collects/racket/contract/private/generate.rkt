@@ -1,6 +1,8 @@
 #lang racket/base
 
 (require "rand.rkt"
+         "exercise-base.rkt"
+         "exercise-main.rkt"
          "generate-base.rkt"
          "guts.rkt"
          "prop.rkt"
@@ -70,7 +72,8 @@
 ; Iterates through generation methods until failure. Returns
 ; generate-ctc-fail if no value could be generated
 (define (generate/choose ctc fuel)
-  (eprintf "generate/choose ~s\n" (contract-struct-name ctc))
+  (when (exercise-logging)
+    (eprintf "generate/choose ~s\n" (contract-struct-name ctc)))
   ; choose randomly until one method succeeds or all fail
   (let trygen ([options (permute (list generate/direct
                                        generate/direct-env
@@ -85,8 +88,10 @@
 ; generate/direct :: contract int -> value for contract
 ; Attempts to make a generator that generates values for this contract
 ; directly. Returns generate-ctc-fail if making a generator fails.
-(define (generate/direct ctc fuel)
-  (eprintf "generate/direct ~s\n" (contract-struct-name ctc))
+(define (generate/direct maybe-ctc fuel)
+  (define ctc (coerce-contract 'generate/direct maybe-ctc))
+  (when (exercise-logging)
+    (eprintf "generate/direct ~s\n" (contract-struct-name ctc)))
   (let ([direct-trace (generate/direct-trace)])
     (when direct-trace
       (let ([name (contract-struct-name ctc)])
@@ -94,8 +99,7 @@
                       name
                       (λ (i) (+ i 1))
                       0))))
-  (let* ([ctc (coerce-contract 'generate/direct ctc)]
-         [g (contract-struct-generate ctc)])
+  (let ([g (contract-struct-generate ctc)])
     ; Check if the contract has a direct generate attached
     (if (generate-ctc-fail? g)
         g 
@@ -104,8 +108,10 @@
 ; generate/direct-env :: contract int -> value
 ; Attemps to find a value with the given contract in the environment.
 ; Returns it if found and generate-ctc-fail otherwise.
-(define (generate/direct-env ctc fuel)
-  (eprintf "generate/direct-env ~s\n" (contract-struct-name ctc))
+(define (generate/direct-env maybe-ctc fuel)
+  (define ctc (coerce-contract 'generate-direct/env maybe-ctc))
+  (when (exercise-logging)
+    (eprintf "generate/direct-env ~s\n" (contract-struct-name ctc)))
   (let ([env-trace (generate/env-trace)])
     (when env-trace
       (let ([name (contract-struct-name ctc)])
@@ -113,8 +119,7 @@
                       name
                       (λ (i) (+ i 1))
                       0))))
-  (let* ([ctc (coerce-contract 'generate-direct/env ctc)]
-         [val (find-val (λ (c vs) (contract-stronger? c ctc))
+  (let ([val (find-val (λ (c vs) (contract-stronger? c ctc))
                         (generate-env))])
     (if (void? val)
         (generate-ctc-fail ctc)
@@ -124,8 +129,10 @@
 ;; Attempts to make a generator that generates values for this contract
 ;; by calling functions in the environment. Note that only procedures 
 ;; as values in the environment will be considered.
-(define (generate/indirect-env ctc fuel)
-  (eprintf "generate/indirect-env ~s\n" (contract-struct-name ctc))
+(define (generate/indirect-env maybe-ctc fuel)
+  (define ctc (coerce-contract 'generate/indirect-env maybe-ctc))
+  (when (exercise-logging)
+    (eprintf "generate/indirect-env ~s\n" (contract-struct-name ctc)))
   (let ([indirect-trace (generate/indirect-trace)])
     (when indirect-trace
       (let ([name (contract-struct-name ctc)])
@@ -133,12 +140,14 @@
                       name
                       (λ (i) (+ i 1))
                       0))))
-  (let ([ctc (coerce-contract 'generate/indirect-env ctc)]
-        [fail (generate-ctc-fail ctc)])
+  (let ([fail (generate-ctc-fail ctc)])
     (if (> fuel 0)
         (let* ([vals (permute-sequence (filter-vals (valid-gen ctc)
                                                     (generate-env)))]
                [val (for/or ([rand-ctc+fun vals])
+                      (when (exercise-logging)
+                        (eprintf "trying indirect using ~a\n" 
+                                 (contract-struct-name (car rand-ctc+fun))))
                       (let ([gen (grab-generated-val ctc 
                                                      rand-ctc+fun 
                                                      fuel)])
@@ -188,7 +197,10 @@
            [handler (λ (exn) (generate-ctc-fail fctc))])
       (begin (vector-set! ienv 0 ctc)
              (with-handlers ([exn:fail? handler])
-               ((contract-struct-exercise fctc) fun fuel #f))
+               (contract-random-exercise fctc
+                                         fun
+                                         fuel
+                                         #f))
              (let ([got-ctc (vector-ref ienv 1)])
                (if (not (number? got-ctc))
                  (vector-ref ienv 2)
