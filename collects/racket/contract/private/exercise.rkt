@@ -26,13 +26,13 @@
 
 ; contract-exercise-funs :: (list funcs) [(list func-names)] fuel -> .
 ;; The main worker function for exercising.
-(define (contract-exercise-funs avail-funcs
-                                func-names
+(define (contract-exercise-funs vals+names
                                 #:fuel [fuel 5]
                                 #:tests [num-tests 1]
                                 #:print-gen [print-gen #f]
                                 #:trace [trace #f]
                                 #:logging [logging #f])
+  (eprintf "vals+names ~s\n" vals+names)
   ; Hash to hold all the run statistics
   (define run-stats 
     (make-hash (list '(total . 0)
@@ -57,7 +57,10 @@
       (eprintf "Missing exerciser for ~a contract(s).\n" (get 'exm))))
 
   ; Current environment
-  (define env (apply make-env-from-funs avail-funcs))
+  (define env 
+    (let ([vals (map car vals+names)])
+      (bulk-env-add (map value-contract vals)
+                    vals)))
 
   ; Save the incoming ports for restoration afterwards
   (define save-current-output #f)
@@ -110,28 +113,28 @@
   ; Do the exercises
   (parameterize ([generate-env env]
                  [exercise-logging logging])
-    (for ([func avail-funcs]
-          [func-name func-names]
-          #:when (has-contract? func))
-      (let* ([ctc (value-contract func)]
+    (for ([val (map car vals+names)]
+          [val-name (map cdr vals+names)]
+          #:when (has-contract? val))
+      (let* ([ctc (value-contract val)]
              [ctc-name (contract-struct-name ctc)]
-             [handler (exercise-exn-handler func-name run-stats)])
+             [handler (exercise-exn-handler val-name run-stats)])
         (with-handlers ([exn:fail:contract:exercise:gen-fail?
                           (handler '(genf))]
                         [exn:fail:contract:exercise:ex-missing?
                           (handler '(exm))]
                         [exn:fail?
                           (handler '(total failed))])
-          (do-prolog func-name ctc-name)
+          (do-prolog val-name ctc-name)
           (run-exercise (λ ()
                            (contract-random-exercise ctc
-                                                     func 
+                                                     val 
                                                      fuel
                                                      print-gen
                                                      #:tests num-tests))
                         ctc
                         ctc-name
-                        func-name)
+                        val-name)
           (do-epilog run-stats)))))
 
   ; Done exercising: cleanup and print the results (and traces, if enabled)
@@ -151,7 +154,7 @@
                                    #:print-gen [print-gen #f]
                                    #:trace [trace #f]
                                    #:logging [logging #f])
-  (define (get-funs+names mod)
+  (define (get-vals+names mod)
     (let* ([export-names (get-exports mod)]
            [minus-excluded (if export-names
                                (remove* exclude export-names)
@@ -159,17 +162,17 @@
            [exports (for/list ([provided minus-excluded])
                       (with-handlers ([exn:fail? (λ (exn) #f)])
                         (dynamic-require mod provided)))])
-      (for/lists (funs names)
+      (for/lists (vals names)
                  ([export exports]
-                  [name minus-excluded]
-                  #:when (procedure? export))
+                  [name minus-excluded])
         (values export name))))
-  (let-values ([(all-funs all-names)
-                (for/lists (funs names)
+  (let-values ([(all-vals all-names)
+                (for/lists (vals names)
                            ([mod module-paths])
-                  (get-funs+names mod))])
-    (contract-exercise-funs (apply append all-funs)
-                            (apply append all-names)
+                  (get-vals+names mod))])
+    (contract-exercise-funs (map cons
+                                 (apply append all-vals)
+                                 (apply append all-names))
                             #:fuel fuel
                             #:tests num-tests
                             #:print-gen print-gen

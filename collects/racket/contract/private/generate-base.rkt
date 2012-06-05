@@ -6,6 +6,9 @@
 
 (provide gen-fail-map
          generate-env
+         env-add
+         bulk-env-add
+
          find-generate
          get-env-contracts
          contract-add-generate
@@ -36,6 +39,17 @@
 ; env parameter
 (define generate-env (make-parameter #f))
 
+; Adds a new contract and value to the environment if they don't already exist
+(define (env-add env ctc val)
+  (let ([curvals (hash-ref env ctc '())])
+    (hash-set! env ctc (cons val curvals))))
+
+; Bulk add to the environment
+(define (bulk-env-add ctcs vals [env (make-hash)])
+  (for ([c ctcs]
+        [v vals])
+      (env-add env c v))
+  env)
 
 (define make-pairs 
   (λ args
