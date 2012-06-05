@@ -15,7 +15,6 @@
          gen-fail-map
 
          contract-add-generate
-         contract-random-generate
 
          generate/direct
          generate/choose
@@ -32,25 +31,6 @@
          make-env-from-funs
          valid-gen)
 
-; generate : contract int -> ctc value or error
-(define (contract-random-generate ctc [fuel 5] #:funs [funs #f]
-         #:fail [fail 
-                  (λ () 
-                     (error 'contract-random-generate
-                            "Unable to construct any generator for contract: ~s"
-                            (contract-struct-name 
-                              (coerce-contract 'contract-random-generate 
-                                               ctc))))])
-  (let ([def-ctc (coerce-contract 'contract-random-generate ctc)])
-    (parameterize ([generate-env (if funs
-                                   (apply make-env-from-funs funs)
-                                   (make-hash))])
-      ; choose randomly
-      (let ([val (generate/choose def-ctc fuel)])
-        (if (generate-ctc-fail? val)
-            (fail)
-            val)))))
-
 ; intercept parameter
 ; See env-stash for intercept usage
 (define intercept-env (make-parameter #f))
@@ -65,13 +45,13 @@
                (contract-stronger? ctc (vector-ref ienv 0)))
       (begin (vector-set! ienv 1 ctc)
              (vector-set! ienv 2 val))))
-  (let ([curvals (hash-ref env ctc (list))])
-    (hash-set! env ctc (cons val curvals))))
+  (env-add env ctc val))
 
 
 ; Iterates through generation methods until failure. Returns
 ; generate-ctc-fail if no value could be generated
-(define (generate/choose ctc fuel)
+(define (generate/choose maybe-ctc fuel)
+  (define ctc (coerce-contract 'generate/choose maybe-ctc))
   (when (exercise-logging)
     (eprintf "generate/choose ~s\n" (contract-struct-name ctc)))
   ; choose randomly until one method succeeds or all fail
