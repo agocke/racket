@@ -32,7 +32,6 @@
                                 #:print-gen [print-gen #f]
                                 #:trace [trace #f]
                                 #:logging [logging #f])
-  (eprintf "vals+names ~s\n" vals+names)
   ; Hash to hold all the run statistics
   (define run-stats 
     (make-hash (list '(total . 0)
@@ -164,7 +163,8 @@
                         (dynamic-require mod provided)))])
       (for/lists (vals names)
                  ([export exports]
-                  [name minus-excluded])
+                  [name minus-excluded]
+                  #:when (has-contract? export))
         (values export name))))
   (let-values ([(all-vals all-names)
                 (for/lists (vals names)

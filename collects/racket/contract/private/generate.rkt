@@ -39,7 +39,8 @@
 ; If intercept-env is a vector containing a contract in the first index then
 ; env-stash will _also_ set the second and third indices to the ctc and val if
 ; the ctc is equal or stronger than the contract in the vector
-(define (env-stash env ctc val)
+(define (env-stash env maybe-ctc val)
+  (define ctc (coerce-contract 'env-stash maybe-ctc))
   (let ([ienv (intercept-env)])
     (when (and (vector? ienv)
                (contract-stronger? ctc (vector-ref ienv 0)))
@@ -157,7 +158,6 @@
 (define (valid-gen target-ctc)
   (λ (env-ctc env-vals)
      (and (not (empty? env-vals))
-          (procedure? (car env-vals))
           ; Check all contracts that env-ctc to see if any is
           ; stronger than the target contract
           (for/or ([c ((contract-struct-can-generate env-ctc) 'exercise)])
