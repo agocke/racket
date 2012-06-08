@@ -46,14 +46,17 @@
   ; Print the run statistics
   (define (print-results run-stats)
     (define (get k) (hash-ref run-stats k))
-    (eprintf "Ran ~s tests, got ~s passes and ~s failures.\n"
+    (fprintf (exercise-output-port)
+             "Ran ~s tests, got ~s passes and ~s failures.\n"
              (get 'total)
              (get 'passed)
              (get 'failed))
     (unless (zero? (get 'genf))
-      (eprintf "Could not generate ~a contract(s).\n" (get 'genf)))
+      (fprintf (exercise-output-port)
+               "Could not generate ~a contract(s).\n" (get 'genf)))
     (unless (zero? (get 'exm))
-      (eprintf "Missing exerciser for ~a contract(s).\n" (get 'exm))))
+      (fprintf (exercise-output-port)
+               "Missing exerciser for ~a contract(s).\n" (get 'exm))))
 
   ; Current environment
   (define env 
@@ -67,7 +70,8 @@
 
   (define (do-prolog func-name ctc-name)
     (rand-seed 0)
-    (eprintf "testing ~a ~a\n" func-name ctc-name))
+    (fprintf (exercise-output-port)
+             "testing ~a ~a\n" func-name ctc-name))
 
   (define (run-exercise run ctc ctc-name func-name)
     (if trace
@@ -96,12 +100,18 @@
   ;; exercise-exn :: string? -> exception handler
   (define (((exercise-exn-handler fun-name run-stats) increments) exn)
     (begin (increment-keys run-stats increments)
-           (eprintf "Got exception while processing function ~a\n" fun-name)
            (if (or (exn:fail:contract:exercise:gen-fail? exn)
                    (exn:fail:contract:exercise:ex-missing? exn))
-               (displayln (exn-message exn)
-                          (current-error-port))
-               ((error-display-handler) (exn-message exn) exn))))
+               (fprintf (exercise-output-port)
+                        "~a\n"
+                        (exn-message exn))
+               (begin (displayln 
+                        "------------------\nFAILURE"
+                        (exercise-output-port))
+                      ((error-display-handler) (exn-message exn) exn)
+                      (displayln
+                        "------------------\n"
+                        (exercise-output-port))))))
 
   ; Setup before the exercises
   (set! save-current-output (current-output-port))
@@ -111,7 +121,9 @@
 
   ; Do the exercises
   (parameterize ([generate-env env]
-                 [exercise-logging logging])
+                 [exercise-logging logging]
+                 [exercise-output-port save-current-output])
+    (current-error-port (exercise-output-port))
     (for ([val (map car vals+names)]
           [val-name (map cdr vals+names)]
           #:when (has-contract? val))
@@ -134,12 +146,11 @@
                         ctc
                         ctc-name
                         val-name)
-          (do-epilog run-stats)))))
-
-  ; Done exercising: cleanup and print the results (and traces, if enabled)
-  (current-output-port save-current-output)
-  (current-input-port save-current-input)
-  (print-results run-stats)
+          (do-epilog run-stats))))
+    ; Done exercising: cleanup and print the results (and traces, if enabled)
+    (current-output-port save-current-output)
+    (current-input-port save-current-input)
+    (print-results run-stats))
   (when trace (trace traces)))
 
 ;; contract-exercise-modules :: module-path [integer?]

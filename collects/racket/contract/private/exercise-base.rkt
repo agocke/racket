@@ -1,6 +1,5 @@
 #lang racket/base
 
-
 (provide exercise-fail
          exercise-gen-fail
          exercise-missing
@@ -9,7 +8,8 @@
          (struct-out exn:fail:contract:exercise:ex-missing)
          
          exercise-trace
-         exercise-logging)
+         exercise-logging
+         exercise-output-port)
 
 (struct exn:fail:contract:exercise exn:fail:contract (ctc-name))
 
@@ -36,3 +36,5 @@
 
 ; Logging for patterns of exercises and generates
 (define exercise-logging (make-parameter #f))
+
+(define exercise-output-port (make-parameter #f))

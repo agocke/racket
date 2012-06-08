@@ -54,7 +54,8 @@
 (define (generate/choose maybe-ctc fuel)
   (define ctc (coerce-contract 'generate/choose maybe-ctc))
   (when (exercise-logging)
-    (eprintf "generate/choose ~s\n" (contract-struct-name ctc)))
+    (fprintf (exercise-output-port)
+             "generate/choose ~s\n" (contract-struct-name ctc)))
   ; choose randomly until one method succeeds or all fail
   (let trygen ([options (permute (list generate/direct
                                        generate/direct-env
@@ -72,7 +73,8 @@
 (define (generate/direct maybe-ctc fuel)
   (define ctc (coerce-contract 'generate/direct maybe-ctc))
   (when (exercise-logging)
-    (eprintf "generate/direct ~s\n" (contract-struct-name ctc)))
+    (fprintf (exercise-output-port)
+             "generate/direct ~s\n" (contract-struct-name ctc)))
   (let ([direct-trace (generate/direct-trace)])
     (when direct-trace
       (let ([name (contract-struct-name ctc)])
@@ -92,7 +94,8 @@
 (define (generate/direct-env maybe-ctc fuel)
   (define ctc (coerce-contract 'generate-direct/env maybe-ctc))
   (when (exercise-logging)
-    (eprintf "generate/direct-env ~s\n" (contract-struct-name ctc)))
+    (fprintf (exercise-output-port)
+             "generate/direct-env ~s\n" (contract-struct-name ctc)))
   (let ([env-trace (generate/env-trace)])
     (when env-trace
       (let ([name (contract-struct-name ctc)])
@@ -113,7 +116,8 @@
 (define (generate/indirect-env maybe-ctc fuel)
   (define ctc (coerce-contract 'generate/indirect-env maybe-ctc))
   (when (exercise-logging)
-    (eprintf "generate/indirect-env ~s\n" (contract-struct-name ctc)))
+    (fprintf (exercise-output-port)
+             "generate/indirect-env ~s\n" (contract-struct-name ctc)))
   (let ([indirect-trace (generate/indirect-trace)])
     (when indirect-trace
       (let ([name (contract-struct-name ctc)])
@@ -127,7 +131,8 @@
                                                     (generate-env)))]
                [val (for/or ([rand-ctc+fun vals])
                       (when (exercise-logging)
-                        (eprintf "trying indirect using ~a\n" 
+                        (fprintf (exercise-output-port)
+                                 "trying indirect using ~a\n" 
                                  (contract-struct-name (car rand-ctc+fun))))
                       (let ([gen (grab-generated-val ctc 
                                                      rand-ctc+fun 

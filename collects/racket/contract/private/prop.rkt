@@ -223,7 +223,7 @@
   (build-property make-contract-property 'anonymous-contract values))
 
 (define ((default-generate ctc) fuel)
-  (generate-ctc-fail ctc))
+  (generate-ctc-fail (contract-struct-name ctc)))
 
 (define ((default-exercise ctc) val fuel print-gen)
   (exercise-missing (contract-struct-name ctc)))
