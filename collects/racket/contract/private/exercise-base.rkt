@@ -8,7 +8,8 @@
          (struct-out exn:fail:contract:exercise:ex-missing)
          
          exercise-trace
-         exercise-logging
+         (struct-out single-exercise-trace)
+         add-trace
          exercise-output-port)
 
 (struct exn:fail:contract:exercise exn:fail:contract (ctc-name))
@@ -34,7 +35,15 @@
 ; Exercise tracing
 (define exercise-trace (make-parameter #f))
 
-; Logging for patterns of exercises and generates
-(define exercise-logging (make-parameter #f))
+; Struct holding the traces for a single exercise
+(struct single-exercise-trace (name ctc-name traces))
+
+; Add trace if tracing is enabled
+(define (add-trace ctc-name location)
+  (let ([ex-trace (exercise-trace)])
+    (when ex-trace
+      (set-box! ex-trace (cons (cons ctc-name
+                                 location)
+                               (unbox ex-trace))))))
 
 (define exercise-output-port (make-parameter #f))

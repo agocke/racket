@@ -16,22 +16,13 @@
          
          (struct-out single-exercise-trace))
 
-(struct single-exercise-trace
-        (name
-          ctc-name
-          exercise-trace
-          generate/direct-trace
-          generate/env-trace
-          generate/indirect-trace))
-
 ; contract-exercise-funs :: (list funcs) [(list func-names)] fuel -> .
 ;; The main worker function for exercising.
 (define (contract-exercise-funs vals+names
                                 #:fuel [fuel 5]
                                 #:tests [num-tests 1]
                                 #:print-gen [print-gen #f]
-                                #:trace [trace #f]
-                                #:logging [logging #f])
+                                #:trace [trace #f])
   ; Hash to hold all the run statistics
   (define run-stats 
     (make-hash (list '(total . 0)
@@ -75,18 +66,12 @@
 
   (define (run-exercise run ctc ctc-name func-name)
     (if trace
-        (parameterize ([exercise-trace (make-hash)]
-                       [generate/direct-trace (make-hash)]
-                       [generate/env-trace (make-hash)]
-                       [generate/indirect-trace (make-hash)])
+        (parameterize ([exercise-trace (box null)])
           (run)
           (set! traces (cons (single-exercise-trace
                                (symbol->string func-name)
                                (format "~a" ctc-name)
-                               (exercise-trace)
-                               (generate/direct-trace)
-                               (generate/env-trace)
-                               (generate/indirect-trace))
+                               (unbox (exercise-trace)))
                              traces)))
         (run)))
 
@@ -121,7 +106,6 @@
 
   ; Do the exercises
   (parameterize ([generate-env env]
-                 [exercise-logging logging]
                  [exercise-output-port save-current-output])
     (current-error-port (exercise-output-port))
     (for ([val (map car vals+names)]
@@ -162,8 +146,7 @@
                                    #:fuel [fuel 5]
                                    #:tests [num-tests 1]
                                    #:print-gen [print-gen #f]
-                                   #:trace [trace #f]
-                                   #:logging [logging #f])
+                                   #:trace [trace #f])
   (define (get-vals+names mod)
     (let* ([export-names (get-exports mod)]
            [minus-excluded (if export-names
@@ -187,8 +170,7 @@
                             #:fuel fuel
                             #:tests num-tests
                             #:print-gen print-gen
-                            #:trace trace
-                            #:logging logging)))
+                            #:trace trace)))
 
 
 ;; get-exports : module-path -> (or/c #f (listof symbol))
