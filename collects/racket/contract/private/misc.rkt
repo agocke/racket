@@ -625,8 +625,7 @@
                 [lower (if (< (between/c-low ctc) min-n)
                          min-n
                          (between/c-low ctc))])
-           (+ (random (- upper lower))
-              lower))))))
+           (rand-range lower upper))))))
 
 (define-syntax (check-unary-between/c stx)
   (syntax-case stx ()
@@ -665,8 +664,7 @@
              [upper (if (> x max-n)
                       max-n
                       x)])
-        (+ (random (- upper min-n))
-           min-n)))))
+        (rand-range min-n upper)))))
 
 (define (>/c x)
   (flat-named-contract
@@ -678,8 +676,7 @@
               [lower (if (< x min-n)
                        min-n
                        x)])
-         (+ (random (- max-n lower))
-            lower)))))
+         (rand-range lower max-n)))))
 
 (define/final-prop (integer-in start end)
   (unless (and (integer? start)

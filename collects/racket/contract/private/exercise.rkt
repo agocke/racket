@@ -164,7 +164,6 @@
                 (for/lists (vals names)
                            ([mod module-paths])
                   (get-vals+names mod))])
-    (rand-seed 0)
     (contract-exercise-funs (map cons
                                  (apply append all-vals)
                                  (apply append all-names))

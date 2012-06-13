@@ -1,6 +1,7 @@
 #lang racket/base
 
 (require "exercise-base.rkt"
+         "rand.rkt"
          "prop.rkt")
 
 (provide contract-random-exercise)

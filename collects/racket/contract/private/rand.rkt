@@ -79,13 +79,13 @@
 ;; oneof :: [a] -> a
 ;; Randomly chooses one of the values from a given list
 (define (oneof a-list) 
-  (list-ref a-list (random (length a-list))))
+  (list-ref a-list (rand (length a-list))))
 
 ; fisher-yates shuffle
 (define (permute a-list)
   (do ((v (list->vector a-list)) (n (length a-list) (- n 1)))
       ((zero? n) (vector->list v))
-    (let* ((r (random n)) (t (vector-ref v r)))
+    (let* ((r (rand n)) (t (vector-ref v r)))
       (vector-set! v r (vector-ref v (- n 1)))
       (vector-set! v (- n 1) t))))
 
@@ -112,19 +112,3 @@
                     elem)))))
       (void))))
 
-;;;;; unit tests ;;;;;;
-#|
-(and (= (rand-seq '(1)) 1)
-     ; Test that we get a roughly even distribution
-     (let* ([l '(1 2 3)]
-            [h (make-hash (for/list ([i l])
-                                    (cons i 0)))]
-            [trials 1000])
-       (begin (for ([i (in-range trials)])
-                   (hash-update! h 
-                                 (rand-seq l) 
-                                 (λ (k) (+ k 1))))
-              (for/and ([(k v) (in-hash h)])
-                       (< (abs (- v (/ trials 3))) 
-                          (/ trials 20))))))
-|#
