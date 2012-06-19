@@ -154,7 +154,7 @@
   ;; Try to generate a random value from  the or/c and pick one of the results
   ;; at random. Fail if all of the results produce generate-ctc-fail
   (define (generate-all fuel)
-    (let ([perm-seq (sequence-map (λ (c) (generate/choose c fuel))
+    (let ([perm-seq (sequence-map (λ (c) (contract-random-generate c fuel))
                                   (in-list (permute filtered-ctcs)))])
       (let-values ([(more? get-next) (sequence-generate perm-seq)])
         (let loop ()
@@ -454,7 +454,7 @@
             [options (filter (is-strongest? all-ctcs) all-ctcs)])
        (let loop ([options (permute options)])
          (cond [(null? options) (generate-ctc-fail ctc)]
-               [else (let ([val (generate/choose (car options) fuel)])
+               [else (let ([val (contract-random-generate (car options) fuel)])
                        (cond [(generate-ctc-fail? val) (loop (cdr options))]
                              [else val]))])))))
 
@@ -462,7 +462,7 @@
   (λ (val fuel print-gen)
      (let ([all-ctcs (base-and/c-ctcs ctc)])
        (for ([c all-ctcs])
-         (contract-random-exercise c val fuel print-gen)))))
+         (contract-random-exercise c val #:fuel fuel #:print-gen print-gen)))))
 
 
 (define-struct base-and/c (ctcs))
@@ -709,7 +709,7 @@
      (define (mk-rand-list so-far)
        (rand-choice
          [1/5 so-far]
-         [else (let ([elem (generate/choose elem-ctc fuel)])
+         [else (let ([elem (contract-random-generate elem-ctc fuel)])
                  (if (generate-ctc-fail? elem)
                      elem
                      (mk-rand-list (cons elem so-far))))]))
@@ -932,7 +932,7 @@
              (delay (p-app (force val))))))
        #:first-order promise?
        #:generate
-       (λ (fuel) (delay (generate/choose ctc fuel)))
+       (λ (fuel) (delay (contract-random-generate ctc fuel)))
        ))))
 
 (define/subexpression-pos-prop (parameter/c x)
@@ -1018,7 +1018,7 @@
    (λ (ctc)
       (λ (fuel)
          (let ([c (generate/direct contract? fuel)])
-           (generate/choose c fuel))))
+           (contract-random-generate c fuel))))
    ))
 
 (define/final-prop any/c (make-any/c))

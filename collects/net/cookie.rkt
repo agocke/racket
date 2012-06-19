@@ -323,7 +323,7 @@
 
 (contract-add-generate cookie-value?
                        (λ (fuel)
-                          (generate/choose rfc2109:value? fuel)))
+                          (generate/direct rfc2109:value? fuel)))
 
 (define (cookie-name? s)
   (and (string? s) 
@@ -332,7 +332,7 @@
 
 (contract-add-generate cookie-name?
                        (λ (fuel)
-                          (generate/choose rfc2068:token? fuel)))
+                          (generate/direct rfc2068:token? fuel)))
 
 ;; Host names as per RFC 1123 and RFC952, more or less, anyway. :-)
 (define char-set:hostname

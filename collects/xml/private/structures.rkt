@@ -95,7 +95,7 @@
    #:generate
    (λ (fuel)
       (let ([ctc (if (permissive-xexprs) any/c none/c)])
-        (generate/choose ctc fuel)))
+        (contract-random-generate ctc fuel)))
    #:stronger
    (λ (this that)
       (if (permissive-xexprs)

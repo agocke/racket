@@ -18,7 +18,7 @@
 
 ; contract-exercise-funs :: (list funcs) [(list func-names)] fuel -> .
 ;; The main worker function for exercising.
-(define (contract-exercise-funs vals+names
+(define (contract-exercise-funs valsXnames
                                 #:fuel [fuel 5]
                                 #:tests [num-tests 1]
                                 #:print-gen [print-gen #f]
@@ -51,7 +51,7 @@
 
   ; Current environment
   (define env 
-    (let ([vals (map car vals+names)])
+    (let ([vals (map car valsXnames)])
       (bulk-env-add (map value-contract vals)
                     vals)))
 
@@ -108,8 +108,8 @@
   (parameterize ([generate-env env]
                  [exercise-output-port save-current-output])
     (current-error-port (exercise-output-port))
-    (for ([val (map car vals+names)]
-          [val-name (map cdr vals+names)]
+    (for ([val (map car valsXnames)]
+          [val-name (map cdr valsXnames)]
           #:when (has-contract? val))
       (let* ([ctc (value-contract val)]
              [ctc-name (contract-struct-name ctc)]
@@ -124,8 +124,8 @@
           (run-exercise (λ ()
                            (contract-random-exercise ctc
                                                      val 
-                                                     fuel
-                                                     print-gen
+                                                     #:fuel fuel
+                                                     #:print-gen print-gen
                                                      #:tests num-tests))
                         ctc
                         ctc-name
@@ -147,7 +147,7 @@
                                    #:tests [num-tests 1]
                                    #:print-gen [print-gen #f]
                                    #:trace [trace #f])
-  (define (get-vals+names mod)
+  (define (get-valsXnames mod)
     (let* ([export-names (get-exports mod)]
            [minus-excluded (if export-names
                                (remove* exclude export-names)
@@ -163,7 +163,7 @@
   (let-values ([(all-vals all-names)
                 (for/lists (vals names)
                            ([mod module-paths])
-                  (get-vals+names mod))])
+                  (get-valsXnames mod))])
     (contract-exercise-funs (map cons
                                  (apply append all-vals)
                                  (apply append all-names))

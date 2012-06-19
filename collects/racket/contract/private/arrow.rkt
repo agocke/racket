@@ -25,6 +25,7 @@ v4 todo:
          "misc.rkt"
          "generate-base.rkt"
          "generate.rkt"
+         "exercise-base.rkt"
          "exercise.rkt"
          racket/stxparam
          racket/performance-hint
@@ -575,7 +576,7 @@ v4 todo:
   (for/list ([c ctcs]
              [v vals]
              #:when (not (flat-contract? c)))
-    (contract-random-exercise c v fuel #f)))
+    (contract-random-exercise c v #:fuel fuel)))
 
 (define (->-generate ctc)
   (λ (fuel)
@@ -583,8 +584,9 @@ v4 todo:
          (let* ([doms-l (length (base->-doms/c ctc))]
                 [doms-ctcs (base->-doms/c ctc)]
                 [new-fuel (- fuel 1)]
-                [rngs-gens (gen-fail-map (λ (c) (generate/choose c new-fuel))
-                                         (base->-rngs/c ctc))]
+                [rngs-gens 
+                  (gen-fail-map (λ (c) (contract-random-generate c new-fuel))
+                                (base->-rngs/c ctc))]
                 [env (generate-env)])
            (if (generate-ctc-fail? rngs-gens)
                rngs-gens
@@ -608,22 +610,31 @@ v4 todo:
 ;; problems are encountered.
 (define (->-exercise ctc)
   (λ (fun fuel print-gen)
-     (let* ([new-fuel (- fuel 1)]
-            [doms-gen (gen-fail-map (λ (c) (generate/choose c new-fuel))
-                                    (base->-doms/c ctc))]
-            [env (generate-env)])
-       (if (generate-ctc-fail? doms-gen)
-           (exercise-gen-fail (contract-struct-name 
-                                (generate-ctc-fail-ctc doms-gen)))
-           (begin (and print-gen (print-gen doms-gen))
-                  (let* ([rngs (call-with-values (λ () (apply fun doms-gen))
-                                                 list)]
-                         [rng-ctcs (base->-rngs/c ctc)])
-                    (begin (check-ctcs rng-ctcs rngs new-fuel)
-                           ; stash results
-                           (for ([c rng-ctcs]
-                                 [r rngs])
-                                (env-stash env c r)))))))))
+     (define new-fuel (- fuel 1))
+     ; Generate a domain
+     (define doms-gen
+       (gen-fail-map (λ (c) (contract-random-generate c new-fuel))
+                     (base->-doms/c ctc)))
+     (define env (generate-env))
+     (if (generate-ctc-fail? doms-gen)
+         (exercise-gen-fail (contract-struct-name 
+                              (generate-ctc-fail-ctc doms-gen)))
+         (begin 
+           ; Print values if print-gen is set
+           (when print-gen (fprintf (exercise-output-port)
+                                    "print-gen: ~s\n"
+                                    doms-gen))
+           ; Call the function with the generated domain
+           (let ([rngs (call-with-values (λ () (apply fun doms-gen))
+                                         list)]
+                 [rng-ctcs (base->-rngs/c ctc)])
+             (begin 
+               ; Check the return values match the range contracts
+               (check-ctcs rng-ctcs rngs new-fuel)
+               ; stash results
+               (for ([c rng-ctcs]
+                     [r rngs])
+                 (env-stash env c r))))))))
 
 ; ->-can-generate produces a list of contracts that the given procedure
 ; contract can generate (not including then contract itself) mode = (or/c

@@ -16,8 +16,8 @@
 
          contract-add-generate
 
+         contract-random-generate
          generate/direct
-         generate/choose
          
          generate-ctc-fail
          generate-ctc-fail?
@@ -51,9 +51,9 @@
 
 ; Iterates through generation methods until failure. Returns
 ; generate-ctc-fail if no value could be generated
-(define (generate/choose maybe-ctc fuel)
-  (define ctc (coerce-contract 'generate/choose maybe-ctc))
-  (add-trace (contract-struct-name ctc) 'generate/choose)
+(define (contract-random-generate maybe-ctc fuel)
+  (define ctc (coerce-contract 'contract-random-generate maybe-ctc))
+  (add-trace (contract-struct-name ctc) 'contract-random-generate)
   ; choose randomly until one method succeeds or all fail
   (let trygen ([options (permute (list generate/direct
                                        generate/direct-env
@@ -150,8 +150,7 @@
              (with-handlers ([exn:fail? handler])
                (contract-random-exercise fctc
                                          fun
-                                         fuel
-                                         #f))
+                                         #:fuel fuel))
              (let ([got-ctc (vector-ref ienv 1)])
                (if (not (number? got-ctc))
                  (vector-ref ienv 2)
