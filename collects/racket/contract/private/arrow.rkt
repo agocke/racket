@@ -654,8 +654,8 @@ v4 todo:
                    [doms-gens (map (can-gen 'generate) doms/c)])
                (flatten `(,doms-gens ,rngs/c ,ranges-ex)))]
             [(equal? mode 'generate)
-             (let ([ranges-ex (map (can-gen 'exercise) rngs/c)])
-               (flatten `(,ranges-ex ,doms/c)))]
+             (let ([ranges-gens (map (can-gen 'generate) rngs/c)])
+               (flatten `(,ranges-gens ,doms/c)))]
             [else (error "Type error: should never happen")])))
   (remove-duplicates dups-gen
                      #:key contract-struct-name))

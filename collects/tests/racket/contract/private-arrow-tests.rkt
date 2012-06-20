@@ -41,6 +41,10 @@
                         . -> .
                         string?)
                        '(integer? string?))
+   (check-can-generate ((integer? . -> . (boolean? . -> . char?))
+                        . -> .
+                        string?)
+                       '(boolean? integer? string?))
    (check-can-generate ((integer? . -> . char?)
                         . -> .
                         integer?)
