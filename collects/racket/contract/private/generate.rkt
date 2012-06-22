@@ -96,19 +96,23 @@
 (define (generate/indirect-env maybe-ctc fuel)
   (define ctc (coerce-contract 'generate/indirect-env maybe-ctc))
   (add-trace (contract-struct-name ctc) 'generate/indirect-env)
+  (define (get-permuted-vals ctc)
+    (permute-sequence (filter-vals (valid-gen ctc)
+                                   (generate-env))))
+  (define (get-a-val ctc options)
+    (for/or ([rand-ctc+fun options])
+      (let ([gen (grab-generated-val ctc 
+                                     rand-ctc+fun 
+                                     fuel)])
+        (if (not (generate-ctc-fail? gen))
+            (list gen)
+            #f))))
   (if (> fuel 0)
-      (let* ([vals (permute-sequence (filter-vals (valid-gen ctc)
-                                                  (generate-env)))]
-             [val (for/or ([rand-ctc+fun vals])
-                    (let ([gen (grab-generated-val ctc 
-                                                   rand-ctc+fun 
-                                                   fuel)])
-                      (if (not (generate-ctc-fail? gen))
-                          (list gen)
-                          #f)))])
-          (if (not val)
-              (generate-ctc-fail ctc)
-              (car val)))
+      (let* ([vals (get-permuted-vals ctc)]
+             [val (get-a-val ctc vals)])
+        (if (not val)
+            (generate-ctc-fail ctc)
+            (car val)))
       (generate-ctc-fail ctc)))
 
 ;; Helper function for getting random matching values from the environment.
