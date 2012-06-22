@@ -17,7 +17,7 @@
          
          (struct-out single-exercise-trace))
 
-; contract-exercise-funs :: (list funcs) [(list func-names)] fuel -> .
+; contract-exercise-vals
 ;; The main worker function for exercising.
 (define (contract-exercise-vals vals
                                 #:fuel [fuel 5]
@@ -137,7 +137,7 @@
     (print-results run-stats))
   (when trace (trace traces)))
 
-;; contract-exercise-modules :: module-path [integer?]
+;; contract-exercise-modules
 ;; The module-level testing function. It is called on a module path
 ;; and individually exercises each available export with a contract
 ;; attached. Output is on the current-error-port.
