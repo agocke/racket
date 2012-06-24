@@ -883,6 +883,8 @@ typedef struct Scheme_Chaperone {
                                        || (SCHEME_NP_CHAPERONEP(obj) && SCHEME_HASHTRP(SCHEME_CHAPERONE_VAL(obj))))
 #define SCHEME_CHAPERONE_BUCKTP(obj) (SCHEME_BUCKTP(obj) \
                                       || (SCHEME_NP_CHAPERONEP(obj) && SCHEME_BUCKTP(SCHEME_CHAPERONE_VAL(obj))))
+#define SCHEME_CHAPERONE_PROMPT_TAGP(obj) (SCHEME_PROMPT_TAGP(obj) \
+                                           || (SCHEME_NP_CHAPERONEP(obj) && SCHEME_PROMPT_TAGP(SCHEME_CHAPERONE_VAL(obj))))
 
 Scheme_Object *scheme_chaperone_vector_ref(Scheme_Object *o, int i);
 void scheme_chaperone_vector_set(Scheme_Object *o, int i, Scheme_Object *v);
@@ -2455,6 +2457,8 @@ Scheme_Object *scheme_apply_lightweight_continuation(Scheme_Lightweight_Continua
 Scheme_Object **scheme_adjust_runstack_argument(Scheme_Lightweight_Continuation *captured,
                                                 Scheme_Object **arg);
 
+Scheme_Lightweight_Continuation *scheme_restore_lightweight_continuation_marks(Scheme_Lightweight_Continuation *lw);
+
 int scheme_can_apply_lightweight_continuation(Scheme_Lightweight_Continuation *captured,
                                               int check_overflow);
 
@@ -3293,6 +3297,8 @@ char *scheme_submodule_path_to_string(Scheme_Object *p, intptr_t *_len);
 /*========================================================================*/
 /*                         errors and exceptions                          */
 /*========================================================================*/
+
+#define NOT_SUPPORTED_STR "unsupported on this platform"
 
 void scheme_read_err(Scheme_Object *port,
 		     Scheme_Object *stxsrc,

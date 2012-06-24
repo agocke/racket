@@ -490,6 +490,36 @@ to the input.  The result will be a copy for immutable hash tables, and either a
 }
 
 
+@defproc[(prompt/c [contract contract?] ...) contract?]{
+Takes any number of contracts and returns a contract that recognizes
+continuation prompt tags and will check any aborts or prompt handlers that
+use the contracted prompt tag.
+
+Each @racket[contract] will check the corresponding value passed to
+an @racket[abort-current-continuation] and handled by the handler of a
+call to @racket[call-with-continuation-prompt].
+
+If all of the @racket[contract]s are chaperone contracts, the resulting
+contract will also be a @tech{chaperone} contract. Otherwise, the contract is
+an @tech{impersonator} contract.
+
+@examples[#:eval (contract-eval)
+  (define/contract tag
+    (prompt/c (-> number? string?))
+    (make-continuation-prompt-tag))
+
+  (call-with-continuation-prompt
+    (lambda ()
+      (number->string
+        (call-with-composable-continuation
+          (lambda (k)
+            (abort-current-continuation tag k)))))
+    tag
+    (lambda (k) (k "not a number")))
+]
+}
+
+
 @defform[(flat-rec-contract id flat-contract-expr ...)]{
 
 Constructs a recursive @tech{flat contract}. A
@@ -1748,7 +1778,8 @@ constructed by @racket[build-flat-contract-property].
 These properties attach a contract value to the protected structure,
 chaperone, or impersonator value.  The function @racket[has-contract?]
 returns @racket[#t] for values that have one of these properties, and
-@racket[value-contract] extracts the contract value.
+@racket[value-contract] extracts the value from the property (which
+is expected to be the contract on the value).
 }
 
 @deftogether[(
@@ -2065,11 +2096,17 @@ Produces the name used to describe the contract in error messages.
 @defproc[(value-contract [v has-contract?]) contract?]{
   Returns the contract attached to @racket[v], if recorded.
   Otherwise it returns @racket[#f].
+  
+  To support @racket[value-contract] and @racket[has-contract?]
+  in your own contract combinators, use @racket[prop:contracted] or
+  @racket[impersonator-prop:contracted].
 }
 
 @defproc[(has-contract? [v any/c]) boolean?]{
   Returns @racket[#t] if @racket[v] is a value that
   has a recorded contract attached to it.
+  
+  See also @racket[value-contract].
 }
 
 

@@ -6,7 +6,6 @@
 
 (contract-add-generate url?
   (λ (fuel) (string->url "http://google.com")))
-(contract-add-generate output-port? (λ (fuel) (open-output-file "/dev/null" #:exists 'update)))
 
 (contract-exercise-modules '(web-server/http)
                            ;; Enable to print values used for testing

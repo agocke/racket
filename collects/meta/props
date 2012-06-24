@@ -96,12 +96,15 @@ path/s is either such a string or a list of them.
 ;; ----------------------------------------------------------------------------
 
 ;; This could use `meta/tree/tree' in the future, it's pretty similar.
-(define-struct tree (name [subs #:mutable] [props #:mutable]))
+(struct Tree (name [subs #:mutable] [props #:mutable] in-db?))
+(define (Tree-subs/sorted tree)
+  (sort (Tree-subs tree) string<?
+        #:key (λ (t) (symbol->string (Tree-name t))) #:cache-keys? #t))
 
 ;; Descriptors for known properties
-(define-struct prop (name description parse unparse))
+(struct Prop (name description parse unparse))
 
-(define props-tree (make-tree #f '() '()))
+(define props-tree (Tree #f '() '() #f))
 (define known-props #f)
 
 ;; used to throw an error message that fits uses as a program and when running
@@ -121,10 +124,10 @@ path/s is either such a string or a list of them.
   (fprintf (current-error-port) "warning: ~a\n" (apply format fmt args)))
 
 (define (find-prop who pname [error-message "unknown property: ~.s"])
-  (if (prop? pname)
+  (if (Prop? pname)
     pname ; might happen when `set-prop!' calls `get-prop'
     (or (for/or ([p (in-list known-props)])
-          (and (eq? pname (prop-name p)) p))
+          (and (eq? pname (Prop-name p)) p))
         (error* who error-message pname))))
 
 (define (path->symbols path-string)
@@ -159,37 +162,34 @@ path/s is either such a string or a list of them.
               " script needs to be exteded to allow them)"))))
 
 (define (parse-prop-string prop str who)
-  (with-handlers ([exn? (lambda (e)
-                          (error* who "bad value for `~a', ~a: ~s"
-                                  (prop-name prop) (exn-message e) str))])
-    ((prop-parse prop) str)))
+  (with-handlers ([exn? (λ (e) (error* who "bad value for `~a', ~a: ~s"
+                                       (Prop-name prop) (exn-message e) str))])
+    ((Prop-parse prop) str)))
 
 (define (get-prop path-string prop-name [default get-prop]
                   #:strict? [strict? #f] #:as-string? [as-string? #f])
   (validate-path-string path-string 'get-prop #t) ; no errors
-  (let ([upchain
-         ;; take the chain going up from the most specific node, so that
-         ;; properties of a directory apply to subpaths
-         (let loop ([path (path->symbols path-string)]
-                    [upchain (list props-tree)])
-           (let ([sub (and (pair? path)
-                           (let ([fst (car path)])
-                             (ormap (lambda (sub)
-                                      (and (eq? (tree-name sub) fst) sub))
-                                    (tree-subs (car upchain)))))])
-             (cond [sub (loop (cdr path) (cons sub upchain))]
-                   [(not strict?) upchain]
-                   [(pair? path) '()]
-                   [else (list (car upchain))])))]
-        [prop (find-prop 'get-prop prop-name)])
-    (cond [(ormap (lambda (tree) (assq prop-name (tree-props tree))) upchain)
-           => (lambda (x)
-                ((if as-string? (prop-unparse prop) values) (cdr x)))]
-          [(eq? get-prop default)
-           (error* 'get-prop "no `~s' property for \"~a\""
-                   prop-name path-string)]
-          [(procedure? default) (default)]
-          [else default])))
+  (define upchain
+    ;; take the chain going up from the most specific node, so that properties
+    ;; of a directory apply to subpaths
+    (let loop ([path (path->symbols path-string)]
+               [upchain (list props-tree)])
+      (define sub
+        (and (pair? path)
+             (let ([fst (car path)])
+               (ormap (λ (sub) (and (eq? (Tree-name sub) fst) sub))
+                      (Tree-subs (car upchain))))))
+      (cond [sub (loop (cdr path) (cons sub upchain))]
+            [(not strict?) upchain]
+            [(pair? path) '()]
+            [else (list (car upchain))])))
+  (define prop (find-prop 'get-prop prop-name))
+  (cond [(ormap (λ (tree) (assq prop-name (Tree-props tree))) upchain)
+         => (λ (x) ((if as-string? (Prop-unparse prop) values) (cdr x)))]
+        [(eq? get-prop default)
+         (error* 'get-prop "no `~s' property for \"~a\"" prop-name path-string)]
+        [(procedure? default) (default)]
+        [else default]))
 
 (define (single->list x) (if (list? x) x (list x)))
 
@@ -205,18 +205,17 @@ path/s is either such a string or a list of them.
             "a value it already has (possibly via a containing directory)")
       ;; otherwise set it blindly (will be normalized away when written)
       (let ([tree (tree-find path #t)])
-        (set-tree-props! tree (cons (cons prop-name val)
-                                    (tree-props tree)))))))
+        (set-Tree-props! tree (cons (cons prop-name val)
+                                    (Tree-props tree)))))))
 
 (define (del-prop! path-string/s prop-name #:warn? [warn? #t])
-  (define prop (find-prop 'set-prop! prop-name))
+  (define prop (find-prop 'del-prop! prop-name))
   (for ([path (in-list (single->list path-string/s))])
     (validate-path-string path 'del-prop!)
     (let* ([tree  (tree-find path #f)]
-           [props (if tree (tree-props tree) '())])
+           [props (if tree (Tree-props tree) '())])
       (cond [(assq prop-name props)
-             (set-tree-props! tree (filter (lambda (p)
-                                             (not (eq? prop-name (car p))))
+             (set-Tree-props! tree (filter (λ (p) (not (eq? prop-name (car p))))
                                            props))]
             [warn? (warn "no `~s' property on ~s" prop-name path)]))))
 
@@ -225,13 +224,29 @@ path/s is either such a string or a list of them.
     (if (null? path)
       tree
       (let* ([fst (car path)]
-             [sub (or (ormap (lambda (sub) (and (eq? (tree-name sub) fst) sub))
-                             (tree-subs tree))
+             [rst (cdr path)]
+             [sub (or (ormap (λ (sub) (and (eq? (Tree-name sub) fst) sub))
+                             (Tree-subs tree))
                       (and create?
-                           (let ([new (make-tree fst '() '())])
-                             (set-tree-subs! tree (cons new (tree-subs tree)))
+                           ;; keep track of properties that are actually in the
+                           ;; db, for verification
+                           (let ([new (Tree fst '() '()
+                                            (and (null? rst) create?))])
+                             (set-Tree-subs! tree (cons new (Tree-subs tree)))
                              new)))])
         (and sub (loop (cdr path) sub))))))
+
+(define (find-root)
+  (let loop ([p this-file] [n 3]) ; look only a few level up
+    (let-values ([(base _1 _2) (split-path p)])
+      (and base
+           (or (and (andmap (λ (d) (directory-exists? (build-path p d)))
+                            '("collects" "doc" "man" "src"))
+                    p)
+               (if (> n 0)
+                 (loop base (sub1 n))
+                 (error* #f "could not find the racket root from ~a"
+                         (path-only this-file))))))))
 
 ;; ----------------------------------------------------------------------------
 ;; Reading and writing
@@ -267,7 +282,7 @@ path/s is either such a string or a list of them.
              (malformed "unexpected text found at the end of the file"))]
           [prop-name
            ;; register a given property value
-           (set-tree-props! tree (cons (cons prop-name x) (tree-props tree)))
+           (set-Tree-props! tree (cons (cons prop-name x) (Tree-props tree)))
            (loop tree #f)]
           [(string? x)
            ;; new path, find the node or create if none
@@ -286,52 +301,137 @@ path/s is either such a string or a list of them.
               "beginning markup not found while writing new file"))
     (write-bytes (car m) new)
     (let loop ([tree props-tree] [path ""])
-      (when (pair? (tree-props tree))
+      (when (pair? (Tree-props tree))
         (fprintf new "~s" path)
-        (for ([p (in-list (tree-props tree))])
+        (for ([p (in-list (Tree-props tree))])
           (fprintf new " ~s ~s" (car p) (cdr p)))
         (newline new))
-      (for ([sub (in-list (tree-subs tree))])
-        (loop sub (let ([s (symbol->string (tree-name sub))])
+      (for ([sub (in-list (Tree-subs tree))])
+        (loop sub (let ([s (symbol->string (Tree-name sub))])
                     (if (equal? "" path) s (string-append path "/" s))))))
     (fprintf new "\n~s |#\n" props-end-token)))
 
 (define (write-props)
-  (define known-prop-names (map prop-name known-props))
+  (define known-prop-names (map Prop-name known-props))
   ;; normalize the tree, to minimize changes to the file and remove redundant
   ;; entries that could be added manually
   (let loop ([tree props-tree] [up-props '()])
     (define normalized-props
       (for*/list ([p (in-list known-prop-names)]
-                  [p (in-value (let ([cur (assq p (tree-props tree))])
+                  [p (in-value (let ([cur (assq p (Tree-props tree))])
                                  (and cur (not (member cur up-props)) cur)))]
                   #:when p)
         p))
-    (set-tree-props! tree normalized-props)
-    (when (pair? (tree-subs tree))
+    (set-Tree-props! tree normalized-props)
+    (when (pair? (Tree-subs tree))
       (let ([up-props (append normalized-props up-props)]
-            [subs (sort (tree-subs tree) string<?
-                        #:key (lambda (t) (symbol->string (tree-name t)))
-                        #:cache-keys? #t)])
-        (set-tree-subs! tree (for*/list ([sub (in-list subs)]
+            [subs (Tree-subs/sorted tree)])
+        (set-Tree-subs! tree (for*/list ([sub (in-list subs)]
                                          [sub (in-value (loop sub up-props))]
                                          #:when sub)
                                sub))))
-    (and (or (pair? (tree-subs tree)) (pair? (tree-props tree))) tree))
+    (and (or (pair? (Tree-subs tree)) (pair? (Tree-props tree))) tree))
   (let (;; temp file in the same directory => fail early if cannot write to it
         ;; and make a rename possible; copy from this file to preserve being
         ;; executable
         [temp (make-temporary-file (format "~a~~a" this-file) this-file)])
     (dynamic-wind
       void
-      (lambda ()
-        (call-with-output-file* temp #:exists 'truncate
-          (lambda (new)
-            (call-with-input-file* this-file
-              (lambda (old) (*write-props old new)))))
-        (delete-file this-file)
-        (rename-file-or-directory temp this-file))
-      (lambda () (when (file-exists? temp) (delete-file temp))))))
+      (λ () (call-with-output-file* temp #:exists 'truncate
+              (λ (new) (call-with-input-file* this-file
+                         (λ (old) (*write-props old new)))))
+            (delete-file this-file)
+            (rename-file-or-directory temp this-file))
+      (λ () (when (file-exists? temp) (delete-file temp))))))
+
+;; ----------------------------------------------------------------------------
+;; Verify this database
+
+(define no-props-needed
+  '(#rx"/compiled$"
+    #rx"(?:^|/)[.]git"
+    #rx"^(?:README|bin|lib|include|[.]mailmap)$"
+    #rx"^collects/info-domain$"
+    #rx"^doc/[^/]*$"))
+
+(define (verify)
+  (define errors 0)
+  (define (path-error path fmt . more)
+    (when (= 0 errors) (newline))
+    (set! errors (add1 errors))
+    (printf "  ~a: ~a\n" (or path "<ROOT>") (apply format fmt more)))
+  (define (uncovered-subs path/ subs)
+    (for*/list ([fn (in-list (directory-list (if (equal? path/ "") "." path/)))]
+                [str (in-value (path-element->string fn))]
+                #:unless (memq (string->symbol str) subs)
+                [subp (in-value (string-append path/ str))]
+                #:unless (for/or ([rx (in-list no-props-needed)])
+                           (regexp-match? rx subp)))
+      subp))
+  (define prop-names (map Prop-name known-props))
+  (define (merge-props propss path/ others)
+    ;; Used to detect collapsible properties, might be disabled, or
+    ;; maybe just output them to stderr if that leads to an email only
+    ;; when there are changes.
+    (filter
+     values
+     (for/list ([pname (in-list prop-names)])
+       (define values
+         (for*/list ([props (in-list propss)]
+                     [a (in-value (assq pname props))]
+                     #:when a)
+           (cdr a)))
+       (cond [(null? values) #f]
+             [(memq (void) values) (cons pname (void))]
+             [else
+              (define value (car values))
+              (define rest  (cdr values))
+              (define same? (andmap (λ (v) (equal? value v)) rest))
+              (when (and same? (pair? rest) (null? others))
+                (path-error (string-append path/ "...")
+                            "all ~s sub-properties are ~s" pname value)
+                ;; Printing the others is usually too verbose.
+                ;; (define rx (regexp (string-append "^" (regexp-quote path/))))
+                ;; (define os (map (λ (o) (regexp-replace rx o "")) others))
+                ;; (define os*
+                ;;   (if (> (length os) 20) (append (take os 20) '("...")) os))
+                ;; (printf "   others: ~a\n" (string-join os* ", "))
+                )
+              (cons pname (if same? (car values) (void)))]))))
+  (define (loop tree base-path base-props)
+    (define name (Tree-name tree))
+    (define path (and name (string-append base-path (symbol->string name))))
+    (define props (Tree-props tree))
+    (define all-props (append props base-props))
+    (define subs (Tree-subs tree))
+    (when (eq? '|| name) (path-error base-path "empty name (trailing slash?)"))
+    (unless (equal? (reverse (Tree-subs tree)) (Tree-subs/sorted tree))
+      (path-error path "unsorted sub-paths"))
+    (when (and (Tree-in-db? tree) (null? props))
+      (path-error path "no properties"))
+    (for ([p (in-list props)] #:when (member p base-props))
+      (path-error path "redundant property: ~s := ~s" (car p) (cdr p)))
+    (define path/ ; #f for a file, "" for the root
+      (cond [(not path) ""]
+            [(directory-exists? path) (string-append path "/")]
+            [(file-exists? path) #f]
+            [else (path-error path "Missing file/directory")]))
+    (define others (if path/ (uncovered-subs path/ (map Tree-name subs)) '()))
+    (unless (assq 'responsible all-props)
+      (define (bad p) (path-error p "no responsible"))
+      (if path/ (for-each bad others) (bad path)))
+    (if path/
+      (let* ([rs (for/list ([sub (in-list subs)]) (loop sub path/ all-props))]
+             [others (append others (map (λ (x) (string-append path/ x))
+                                         (append-map car rs)))])
+        (cons others (merge-props (cons props (map cdr rs)) path/ others)))
+      (cons others props)))
+  (define root (find-root))
+  (printf "Root: ~a..." root)
+  (parameterize ([current-directory root]) (loop props-tree #f '()))
+  (if (errors . > . 0)
+    (error* #f "~s path errors" errors)
+    (printf " no errors.\n")))
 
 ;; ----------------------------------------------------------------------------
 ;; Main
@@ -371,25 +471,15 @@ path/s is either such a string or a list of them.
     (for ([v (in-list (verbs))]) (printf "  ~a\n" (cadr v)))
     (printf "\nKnown properties:\n")
     (for ([p (in-list known-props)])
-      (printf "  ~s: ~a\n" (prop-name p) (prop-description p)))
+      (printf "  ~s: ~a\n" (Prop-name p) (Prop-description p)))
     (para "See in-script comments for a racket interface"))
   (define (verbs)
     `([("help" "h" "-h" "--help") "help: show this help" ,help]
       [("get") "get <prop> <path/s>" ,get]
       [("set") "set <prop> <val> <path/s>" ,set]
       [("del") "del <prop> <path/s>" ,del]
-      [("mv")  "mv  <path> <path>" ,mv]))
-  (define (find-root)
-    (let loop ([p this-file] [n 3]) ; look only a few level up
-      (let-values ([(base _1 _2) (split-path p)])
-        (and base
-             (or (and (andmap (lambda (d) (directory-exists? (build-path p d)))
-                              '("collects" "doc" "man" "src"))
-                      p)
-                 (if (> n 0)
-                   (loop base (sub1 n))
-                   (error* #f "could not find the racket root from ~a"
-                           (path-only this-file))))))))
+      [("mv")  "mv  <path> <path>" ,mv]
+      [("verify") "verify: check that paths exist" ,verify]))
   (define check-existing-paths? #t)
   (define (paths->list path paths)
     (if (and (equal? "-" path) (null? paths))
@@ -434,7 +524,7 @@ path/s is either such a string or a list of them.
     (let ([nonesuch (gensym 'none)]
           [from (paths->list from null)]
           [to (paths->list to null)])
-      (for ([p (in-list (map prop-name known-props))])
+      (for ([p (in-list (map Prop-name known-props))])
         (let ([v (get-prop from p nonesuch #:strict? #t)])
           (unless (eq? v nonesuch)
             (set-prop! to p v)
@@ -442,14 +532,14 @@ path/s is either such a string or a list of them.
     (write-props))
   (set! running-as-script? #t)
   ;; (perhaps add some `--force' flag to (set! check-existing-paths? #f))
-  (let* ([verb (if (pair? args) (car args) (usage "missing subcommand"))]
-         [args (cdr args)]
-         [proc (or (for/or ([v (in-list (verbs))] #:when (member verb (car v)))
-                     (caddr v))
-                   (usage (format "unknown subcommand ~s" verb)))])
-    (if (procedure-arity-includes? proc (length args))
-      (apply proc args)
-      (usage (format "bad number of arguments for ~s" verb)))))
+  (define verb (if (pair? args) (car args) (usage "missing subcommand")))
+  (define verb-args (cdr args))
+  (define proc
+    (or (for/or ([v (in-list (verbs))] #:when (member verb (car v))) (caddr v))
+        (usage (format "unknown subcommand ~s" verb))))
+  (if (procedure-arity-includes? proc (length verb-args))
+    (apply proc verb-args)
+    (usage (format "bad number of arguments for ~s" verb))))
 
 ;; ----------------------------------------------------------------------------
 
@@ -457,27 +547,28 @@ path/s is either such a string or a list of them.
  known-props
  (list
   ;; --------------------
-  (make-prop
+  (Prop
    'responsible
    "responsible person/people (comma separated names)"
-   (lambda (str)
+   (λ (str)
      (let* ([strs (remove* '("") (regexp-split #rx" *, *" str))]
             [syms (map string->symbol strs)])
-       (cond [(ormap (lambda (s) (and (not (regexp-match? #rx"^[a-z]+" s)) s))
-                     strs)
-              => (lambda (s) (error (format "~s is an invalid name" s)))]
+       (cond [(ormap (λ (s) (and (not (regexp-match? #rx"^[a-z]+" s)) s)) strs)
+              => (λ (s) (error (format "~s is an invalid name" s)))]
              [(not (= (length syms) (length (remove-duplicates syms eq?))))
               (error "repeated names")]
              [else syms])))
-   (lambda (syms)
-     (apply string-append (add-between (map symbol->string syms) ","))))
+   (λ (syms) (string-join (map symbol->string syms) ",")))
   ;; --------------------
-  (make-prop
+  (Prop
    'drdr:command-line
-   (string-append
-    "command-line string (space-separated, missing => default execution,"
-    " empty => no execution, \"~s\" => the file)")
-   (lambda (str)
+   (string-join
+    '("command-line string"
+      "space-separated with \"~s\" for the file, empty => no execution,"
+      "missing => use the default (\"racket ~s\" for *.rkt etc,"
+      "\"racket -f ~s\" for *.rktl)")
+    "\n      ")
+   (λ (str)
      (define (bad) (error "expecting an empty string, or one with `~s'"))
      (if (equal? str "")
        #f
@@ -488,8 +579,7 @@ path/s is either such a string or a list of them.
            #f
            (let* ([xs (regexp-split #rx" " str)]
                   [xs (cons (string->symbol (car xs))
-                            (map (lambda (x) (if (equal? x "~s") '* x))
-                                 (cdr xs)))]
+                            (map (λ (x) (if (equal? x "~s") '* x)) (cdr xs)))]
                   [*-tail (memq '* xs)]
                   [commands '(racket gracket gracket-text raco mzc)])
              (unless (memq (car xs) commands)
@@ -501,101 +591,80 @@ path/s is either such a string or a list of them.
              (when (memq '* (cdr *-tail))
                (error "can't use more than a single `~s'"))
              xs)))))
-   (lambda (cmd)
+   (λ (cmd)
      (define (bad)
        (error 'drdr:command-line "bad command-line value: ~.s" cmd))
      (cond [(not cmd) ""]
            [(not (list? cmd)) (bad)]
-           [else (string-join (map (lambda (x)
-                                     (cond [(eq? x '*) "~s"]
-                                           [(symbol? x) (symbol->string x)]
-                                           [(string? x) x]
-                                           [else (bad)]))
-                                   cmd))])))
+           [else (string-join (for/list ([x (in-list cmd)])
+                                (cond [(eq? x '*) "~s"]
+                                      [(symbol? x) (symbol->string x)]
+                                      [(string? x) x]
+                                      [else (bad)]))
+                              " ")])))
   ;; --------------------
-  (make-prop
+  (Prop
    'drdr:timeout
    "timeout in seconds"
-   (lambda (str)
-     (if (regexp-match? #rx"^ *[0-9]+ *$" str)
-       (string->number str)
-       (error "expecting an integer")))
+   (λ (str) (if (regexp-match? #rx"^ *[0-9]+ *$" str)
+              (string->number str)
+              (error "expecting an integer")))
    number->string)
    ;; --------------------
-  (make-prop
+  (Prop
    'drdr:random
    "is file output random?"
-   (lambda (str)
-     (cond [(equal? str "yes") #t]
-           [(equal? str "no")  #f]
-           [else (error "expecting \"yes\" or \"no\"")]))
-   (lambda (b) (if b "yes" "no")))))
+   (λ (str) (cond [(equal? str "yes") #t]
+                  [(equal? str "no")  #f]
+                  [else (error "expecting \"yes\" or \"no\"")]))
+   (λ (b) (if b "yes" "no")))))
 
 ;; read the arguments here, so just requiring this file verifies the data
 (read-props)
+
+;; if we're running directly, do a verification
+;; Use this only when supported
+(require (for-syntax racket/base version/utils))
+(define-syntax (add-main stx)
+  (if ((version) . version<=? . "5.2.1") #'(begin) #'(module+ main (verify))))
+(add-main)
 
 ;; ----------------------------------------------------------------------------
 
 #| #:begin-props
 
 "collects/2htdp" responsible (matthias)
-"collects/2htdp/image.rkt" responsible (robby) drdr:command-line (gracket-text "-t" *)
-"collects/2htdp/private/check-aux.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/2htdp/private/checked-cell.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/2htdp/private/image-core.rkt" responsible (robby) drdr:command-line (gracket *)
-"collects/2htdp/private/image-more.rkt" responsible (robby) drdr:command-line (gracket-text "-t" *)
-"collects/2htdp/private/img-err.rkt" responsible (robby) drdr:command-line (gracket *)
-"collects/2htdp/private/last.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/2htdp/private/launch-many-worlds.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/2htdp/private/timer.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/2htdp/private/universe-image.rkt" drdr:command-line (gracket *)
-"collects/2htdp/private/universe.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/2htdp/private/world.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/2htdp/tests/bad-draw.rkt" drdr:command-line (gracket *)
+"collects/2htdp/image.rkt" responsible (robby)
+"collects/2htdp/private/image-core.rkt" responsible (robby)
+"collects/2htdp/private/image-more.rkt" responsible (robby)
+"collects/2htdp/private/img-err.rkt" responsible (robby)
 "collects/2htdp/tests/full-scene-visible.rkt" drdr:command-line (gracket *)
-"collects/2htdp/tests/image-equality-performance-htdp.rkt" responsible (robby) drdr:command-line (gracket-text "-t" *)
-"collects/2htdp/tests/image-equality-performance.rkt" responsible (robby) drdr:command-line (gracket-text *)
+"collects/2htdp/tests/image-equality-performance-htdp.rkt" responsible (robby)
+"collects/2htdp/tests/image-equality-performance.rkt" responsible (robby)
 "collects/2htdp/tests/jpr-bug.rkt" drdr:command-line #f
 "collects/2htdp/tests/mouse-evt.rkt" drdr:command-line #f
 "collects/2htdp/tests/mp.rkt" drdr:command-line #f
 "collects/2htdp/tests/on-release-no-key.rkt" drdr:command-line (raco "make" *)
 "collects/2htdp/tests/pad1.rkt" drdr:command-line (raco "make" *)
-"collects/2htdp/tests/perform-record.rkt" drdr:command-line (gracket "-qt" *)
+"collects/2htdp/tests/perform-record.rkt" drdr:command-line (gracket *)
 "collects/2htdp/tests/perform-robby.rkt" drdr:command-line (gracket *)
 "collects/2htdp/tests/perform-whack.rkt" drdr:command-line #f
 "collects/2htdp/tests/profile-robby.rkt" drdr:command-line #f
 "collects/2htdp/tests/record-stop-when.rkt" drdr:command-line (gracket *)
 "collects/2htdp/tests/record.rkt" drdr:command-line (gracket *)
-"collects/2htdp/tests/release.rkt" drdr:command-line (gracket "-t" *)
+"collects/2htdp/tests/release.rkt" drdr:command-line (gracket *)
 "collects/2htdp/tests/stop.rkt" drdr:command-line (gracket *)
-"collects/2htdp/tests/test-image.rkt" responsible (robby) drdr:command-line (gracket-text "-t" *)
+"collects/2htdp/tests/test-image.rkt" responsible (robby)
 "collects/2htdp/tests/ufo-rename.rkt" drdr:command-line (gracket *)
 "collects/2htdp/tests/universe-receive.rkt" drdr:command-line (raco "make" *)
-"collects/2htdp/tests/world0-stops.rkt" drdr:command-line (gracket-text "-t" *)
+"collects/2htdp/tests/world0-stops.rkt" drdr:command-line (gracket *)
 "collects/2htdp/uchat/chatter.rkt" drdr:command-line (mzc "-k" *)
 "collects/2htdp/uchat/server.rkt" drdr:command-line (mzc "-k" *)
-"collects/2htdp/universe.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/2htdp/utest/balls.rkt" drdr:command-line (mzc *)
 "collects/2htdp/utest/sam.rkt" drdr:command-line (mzc *)
-"collects/2htdp/utest/shared.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/afm" responsible (mflatt)
-"collects/afm/ttf-to-glyphlist.rkt" drdr:command-line (mzc *)
-"collects/algol60" responsible (mflatt)
-"collects/algol60/bd-tool.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/algol60/tool.rkt" drdr:command-line (gracket-text "-t" *)
+"collects/algol60" responsible (mflatt robby)
 "collects/at-exp" responsible (eli mflatt)
 "collects/browser" responsible (robby)
-"collects/browser/browser-unit.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/browser/browser.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/browser/bullet-snip.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/browser/external.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/browser/htmltext.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/browser/main.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/browser/private/bullet.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/browser/private/html.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/browser/private/hyper.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/browser/private/option-snip.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/browser/tool.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/combinator-parser" responsible (kathyg)
 "collects/compiler" responsible (mflatt)
 "collects/compiler/commands/ctool.rkt" drdr:command-line #f
@@ -606,7 +675,6 @@ path/s is either such a string or a list of them.
 "collects/compiler/commands/test.rkt" responsible (jay)
 "collects/compiler/demodularizer" responsible (jay)
 "collects/compiler/demodularizer/batch.rkt" drdr:command-line #f
-"collects/compiler/demodularizer/prims.rkt" drdr:command-line #f
 "collects/config" responsible (mflatt eli)
 "collects/data" responsible (ryanc samth)
 "collects/datalog" responsible (jay)
@@ -618,70 +686,20 @@ path/s is either such a string or a list of them.
 "collects/db/private/odbc/main.rkt" drdr:command-line #f
 "collects/defaults" responsible (robby)
 "collects/deinprogramm" responsible (sperber)
-"collects/deinprogramm/contract/contract-test-display.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/deinprogramm/convert-explicit.scm" drdr:command-line #f
 "collects/deinprogramm/define-record-procedures.scm" drdr:command-line #f
-"collects/deinprogramm/deinprogramm-langs.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/deinprogramm/image.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/deinprogramm/line3d.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/deinprogramm/line3d.scm" drdr:command-line #f
 "collects/deinprogramm/quickcheck/quickcheck.scm" drdr:command-line #f
 "collects/deinprogramm/quickcheck/random.scm" drdr:command-line #f
 "collects/deinprogramm/run-dmda-code.rkt" drdr:command-line (mzc *)
-"collects/deinprogramm/turtle.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/deinprogramm/world.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/drracket" responsible (robby)
-"collects/drracket/arrow.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/drracket/drracket.rkt" drdr:command-line (mzc *)
 "collects/drracket/main.rkt" drdr:command-line (mzc *)
-"collects/drracket/private/app.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/auto-language.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/bindings-browser.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/bitmap-message.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/debug.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/drracket/private/dock-icon.rkt" drdr:command-line (raco "make" *)
 "collects/drracket/private/drracket-normal.rkt" drdr:command-line (mzc *)
-"collects/drracket/private/eb.rkt" drdr:command-line (gracket-text *)
-"collects/drracket/private/embedded-snip-utils.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/eval.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/font.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/frame.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/help-desk.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/honu-logo.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/init.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/insert-large-letters.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/label-frame-mred.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/language-configuration.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/language-object-contract.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/language.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/drracket/private/launcher-mred-bootstrap.rkt" drdr:command-line (mzc *)
 "collects/drracket/private/launcher-mz-bootstrap.rkt" drdr:command-line (mzc *)
-"collects/drracket/private/link.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/main.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/modes.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/module-browser.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/module-language-tools.rkt" drdr:command-line (gracket-text *)
-"collects/drracket/private/module-language.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/multi-file-search.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/number-snip.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/palaka.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/profile-drs.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/rep.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/drracket/private/stick-figures.rkt" drdr:command-line (mzc *)
-"collects/drracket/private/syncheck/annotate.rkt" drdr:command-line (gracket *)
-"collects/drracket/private/syncheck/colors.rkt" drdr:command-line (gracket *)
-"collects/drracket/private/syncheck/contract-traversal.rkt" drdr:command-line (gracket *)
-"collects/drracket/private/syncheck/gui.rkt" drdr:command-line (gracket *)
-"collects/drracket/private/syncheck/traversals.rkt" drdr:command-line (gracket *)
-"collects/drracket/private/syncheck-debug.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/text.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/tools-drs.rkt" drdr:command-line (gracket *)
-"collects/drracket/private/tools.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/tracing.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/private/unit.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/sprof.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/drracket/syncheck-drracket-button.rkt" drdr:command-line (gracket-text *)
-"collects/drracket/syncheck.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/drracket/tool-lib.rkt" drdr:command-line (mzc *)
 "collects/drscheme" responsible (robby)
 "collects/drscheme/drscheme.rkt" drdr:command-line (mzc *)
@@ -690,42 +708,8 @@ path/s is either such a string or a list of them.
 "collects/dynext" responsible (mflatt)
 "collects/dynext/private/stdio.rkt" drdr:command-line #f
 "collects/embedded-gui" responsible (mflatt)
-"collects/embedded-gui/embedded-gui.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/embedded-gui/main.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/embedded-gui/private/aligned-pasteboard.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/embedded-gui/private/alignment-helpers.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/embedded-gui/private/button-snip.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/embedded-gui/private/cue-text.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/embedded-gui/private/dllist.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/embedded-gui/private/embedded-message.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/embedded-gui/private/fixed-width-label-snip.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/embedded-gui/private/grey-editor.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/embedded-gui/private/lines.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/embedded-gui/private/locked-pasteboard.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/embedded-gui/private/on-show-editor.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/embedded-gui/private/on-show-pasteboard.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/embedded-gui/private/program-editor.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/embedded-gui/private/really-resized-pasteboard.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/embedded-gui/private/single-line-text.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/embedded-gui/private/snip-lib.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/embedded-gui/private/snip-wrapper.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/embedded-gui/private/stretchable-editor-snip.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/embedded-gui/private/suppress-modify-editor.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/embedded-gui/private/tabbable-text.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/embedded-gui/private/tests/alignment-test.rkt" drdr:command-line #f
-"collects/embedded-gui/private/tests/info.rkt" drdr:command-line #f
-"collects/embedded-gui/private/tests/not-stetching.rkt" drdr:command-line #f
-"collects/embedded-gui/private/tests/only-one-child.rkt" drdr:command-line #f
-"collects/embedded-gui/private/tests/peer-stretchables.rkt" drdr:command-line #f
-"collects/embedded-gui/private/tests/stretching-in-alignment.rkt" drdr:command-line #f
-"collects/embedded-gui/private/tests/target-not-object.rkt" drdr:command-line #f
-"collects/embedded-gui/private/tests/test-alignment.rkt" drdr:command-line #f
-"collects/embedded-gui/private/tests/test-case-box.rkt" drdr:command-line #f
-"collects/embedded-gui/private/tests/test-macro.rkt" drdr:command-line #f
-"collects/embedded-gui/private/tests/test-show-feature-for-test-case.rkt" drdr:command-line #f
-"collects/embedded-gui/private/tests/test-show-feature.rkt" drdr:command-line #f
-"collects/embedded-gui/private/tests/unaligned-childless-redux.rkt" drdr:command-line #f
-"collects/embedded-gui/private/verthoriz-alignment.rkt" drdr:command-line (gracket-text "-t" *)
+"collects/embedded-gui/private/tests" drdr:command-line #f
+"collects/eopl" responsible (dvanhorn)
 "collects/errortrace" responsible (mflatt)
 "collects/ffi" responsible (eli mflatt)
 "collects/ffi/examples" responsible (eli)
@@ -747,41 +731,7 @@ path/s is either such a string or a list of them.
 "collects/ffi/unsafe/objc.rkt" responsible (mflatt) drdr:command-line (mzc *)
 "collects/file" responsible (mflatt)
 "collects/framework" responsible (robby)
-"collects/framework/collapsed-snipclass.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/comment-snip.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/decorated-editor-snip.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/framework-unit.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/framework.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/gui-utils.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/keybinding-lang.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/main.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/preferences.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/private/autosave.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/private/canvas.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/private/collapsed-snipclass-helpers.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/private/color-prefs.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/private/color.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/private/comment-box.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/private/decorated-editor-snip.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/private/editor.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/private/exit.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/private/finder.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/private/frame.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/private/group.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/private/handler.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/private/keymap.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/private/main.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/private/menu.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/private/number-snip.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/private/preferences.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/private/scheme.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/private/search.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/private/standard-menus.rkt" drdr:command-line #f
-"collects/framework/private/text.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/splash.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/framework/test.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/frtime" responsible (jay gcooper)
-"collects/frtime/animation/graphics.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/frtime/animation.rkt" drdr:command-line (mzc *)
 "collects/frtime/demos/analog-clock.rkt" drdr:command-line (mzc *)
 "collects/frtime/demos/ball-on-string.rkt" drdr:command-line (mzc *)
@@ -798,214 +748,56 @@ path/s is either such a string or a list of them.
 "collects/frtime/demos/tetris.rkt" drdr:command-line (mzc *)
 "collects/frtime/demos/tile-game.rkt" drdr:command-line (mzc *)
 "collects/frtime/demos/ufo.rkt" drdr:command-line (mzc *)
-"collects/frtime/frlibs/date.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/frtime/frp-snip.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/frtime/frtime-big.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/frtime/frtime.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/frtime/gui/aux-mixin-macros.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/frtime/gui/demo/bindec.rkt" drdr:command-line (mzc *)
-"collects/frtime/gui/demo/instr.rkt" drdr:command-line (mzc *)
-"collects/frtime/gui/demo/timer.rkt" drdr:command-line (mzc *)
-"collects/frtime/gui/fred.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/frtime/gui/mixin-macros.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/frtime/gui/simple.rkt" drdr:command-line (gracket-text "-t" *)
+"collects/frtime/gui/demo" drdr:command-line (mzc *)
 "collects/frtime/gui.rkt" drdr:command-line (mzc *)
-"collects/frtime/main.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/frtime/opt/frtime-opt-lang.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/frtime/reactive.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/frtime/tool/frtime-tool.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/games" responsible (mflatt robby)
-"collects/games/aces/aces.scm" drdr:command-line (gracket-text "-t" *)
-"collects/games/blackjack/blackjack.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/cards/base.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/cards/card-class.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/cards/cards.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/cards/classes.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/cards/constants.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/cards/main.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/cards/make-cards.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/cards/snipclass.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/cards.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/games/chat-noir" responsible (robby matthias)
-"collects/games/chat-noir/chat-noir-literate.rkt" drdr:command-line (gracket-text *)
-"collects/games/chat-noir/chat-noir-unit.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/checkers/checkers.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/checkers/honu-bitmaps.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/crazy8s/crazy8s.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/doors/doors.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/doors/utils.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/gcalc/gcalc.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/ginrummy/ginrummy.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/gl-board-game/gl-board.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/gl-board-game/main.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/gl-board-game.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/games/gobblet/check.rkt" drdr:command-line (mzc "-k" *)
-"collects/games/gobblet/gobblet.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/gobblet/gui.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/games/gobblet/robot.rkt" drdr:command-line (mzc "-k" *)
 "collects/games/gobblet/test-explore.rkt" drdr:command-line (mzc "-k" *)
 "collects/games/gobblet/test-model.rkt" drdr:command-line (mzc "-k" *)
-"collects/games/gofish/gofish.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/jewel/jewel.scm" drdr:command-line (gracket-text "-t" *)
-"collects/games/jewel/text.scm" drdr:command-line (gracket-text "-t" *)
-"collects/games/lights-out/board.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/lights-out/lights-out.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/games/main.rkt" drdr:command-line (mzc *)
-"collects/games/memory/memory.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/mines/gen-tiles.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/mines/mines.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/paint-by-numbers/gui.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/games/paint-by-numbers/main.rkt" drdr:command-line #f
-"collects/games/paint-by-numbers/paint-by-numbers.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/games/paint-by-numbers/raw-problems/build-final.rkt" drdr:command-line (mzc *)
-"collects/games/paint-by-numbers/raw-problems/build-hattori.rkt" drdr:command-line (gracket "-t" *)
 "collects/games/paint-by-numbers/raw-problems/build-rows-cols.rkt" drdr:command-line (mzc "-k" *)
-"collects/games/paint-by-numbers/raw-problems/build-solution-sets.rkt" drdr:command-line (gracket "-t" *)
+"collects/games/paint-by-numbers/raw-problems/build-solution-sets.rkt" drdr:command-line (gracket *)
 "collects/games/paint-by-numbers/raw-problems/size-calculation.rkt" drdr:command-line (mzc *)
-"collects/games/parcheesi/admin-gui.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/parcheesi/die.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/parcheesi/gui.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/games/parcheesi/make-bitmap.rkt" drdr:command-line (mzc *)
-"collects/games/parcheesi/parcheesi.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/parcheesi/play-game.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/parcheesi/rules.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/pousse/pousse.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/same/same.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/show-help.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/slidey/slidey.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/games/spider/spider.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/graphics" responsible (mflatt robby)
-"collects/graphics/graphics-posn-less-unit.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/graphics/graphics-unit.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/graphics/graphics.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/graphics/main.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/graphics/turtle-examples.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/graphics/turtle-test.rkt" drdr:command-line (mzc "-k" *)
-"collects/graphics/turtles.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/graphics/value-turtles-examples.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/graphics/value-turtles-test.rkt" drdr:command-line (mzc *)
-"collects/graphics/value-turtles.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/gui-debugger" responsible (gmarceau mflatt)
-"collects/gui-debugger/debug-tool.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/gui-debugger/load-sandbox.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/guibuilder/base.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/guibuilder/canvas.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/guibuilder/feature.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/guibuilder/guibuilder.rkt" drdr:command-line (mzc *)
-"collects/guibuilder/multiple-choice.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/guibuilder/panel.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/guibuilder/readable.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/guibuilder/simple-control.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/guibuilder/slider-guage.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/guibuilder/text-field.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/guibuilder/tool.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/guibuilder/toolbar.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/guibuilder/top-level.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/guibuilder/utils.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/handin-client" responsible (eli)
-"collects/handin-client/client-gui.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/handin-client/handin-multi.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/handin-client/updater.rkt" drdr:command-line (mzc *)
 "collects/handin-server" responsible (eli)
 "collects/handin-server/checker.rkt" drdr:command-line (mzc *)
 "collects/handin-server/main.rkt" drdr:command-line (mzc *)
-"collects/handin-server/overridden-collects/teachpack/" drdr:command-line (gracket-text "-t" *)
 "collects/handin-server/utils.rkt" drdr:command-line (mzc *)
 "collects/handin-server/web-status-server.rkt" drdr:command-line (mzc *)
 "collects/help" responsible (robby)
-"collects/help/bug-report.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/help/help.rkt" drdr:command-line (mzc *)
 "collects/hierlist" responsible (mflatt)
-"collects/hierlist/hierlist.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/honu" responsible (mflatt rafkind)
 "collects/htdp" responsible (matthias)
-"collects/htdp/arrow-gui.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/arrow.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/big-draw.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/convert.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/draw.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/elevator.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/htdp/graphing.rkt" drdr:command-line (mzc *)
-"collects/htdp/guess-gui.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/guess.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/gui.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/hangman-play.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/hangman-world-play.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/hangman-world.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/hangman.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/image.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/lkup-gui.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/master-play.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/master.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/matrix-invisible.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/matrix-unit.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/matrix.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/show-queen.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/tests/arrow-gui.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/tests/arrow.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/htdp/tests/convert.rkt" drdr:command-line (mzc *)
 "collects/htdp/tests/dir.rkt" drdr:command-line #f
-"collects/htdp/tests/draw.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/htdp/tests/elevator.rkt" drdr:command-line (mzc *)
 "collects/htdp/tests/graphing.rkt" drdr:command-line (mzc *)
-"collects/htdp/tests/guess-gui.rkt" drdr:command-line #f
-"collects/htdp/tests/guess1.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/tests/guess2.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/tests/guess3.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/htdp/tests/gui.rkt" drdr:command-line (mzc *)
 "collects/htdp/tests/hangman-error.rkt" drdr:command-line (mzc *)
-"collects/htdp/tests/hangman1.rkt" drdr:command-line (gracket "-t" *)
-"collects/htdp/tests/lkup-gui.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/tests/master.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/htdp/tests/matrix-client.rkt" drdr:command-line #f
 "collects/htdp/tests/matrix-example.rkt" drdr:command-line #f
-"collects/htdp/tests/matrix-test.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/htdp/tests/world-add-line.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/htdp/tests/world-mouse.rkt" drdr:command-line (mzc *)
-"collects/htdp/tests/world.rkt" drdr:command-line (gracket "-t" *)
-"collects/htdp/world.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/html" responsible (jay)
 "collects/icons" responsible (ntoronto)
-"collects/icons/private/svg/render-png.rkt" drdr:command-line #f
 "collects/images" responsible (ntoronto)
 "collects/images/tests/effects-tests.rkt" drdr:command-line #f
 "collects/json" responsible (eli)
 "collects/lang" responsible (mflatt robby matthias)
-"collects/lang/htdp-langs.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/lang/plt-pretty-big.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/lang/private/imageeq.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/launcher" responsible (mflatt)
 "collects/lazy" responsible (eli stchang)
 "collects/macro-debugger" responsible (ryanc)
-"collects/macro-debugger/model/trace-raw.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/stepper.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/syntax-browser/controller.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/syntax-browser/display.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/syntax-browser/embed.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/syntax-browser/frame.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/syntax-browser/hrule-snip.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/syntax-browser/image.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/syntax-browser/keymap.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/syntax-browser/prefs.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/syntax-browser/pretty-printer.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/syntax-browser/properties.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/syntax-browser/snip-decorated.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/syntax-browser/snip.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/syntax-browser/text.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/syntax-browser/widget.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/syntax-browser.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/tool.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/view/debug.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/view/extensions.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/view/frame.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/view/gui-util.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/view/hiding-panel.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/view/prefs.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/view/step-display.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/view/stepper.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/view/term-record.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/view/view.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/macro-debugger/view/warning.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/make" responsible (mflatt)
 "collects/meta" responsible (eli)
 "collects/meta/build" drdr:command-line #f
@@ -1014,97 +806,16 @@ path/s is either such a string or a list of them.
 "collects/meta/drdr" responsible (jay) drdr:command-line #f
 "collects/meta/drdr2" responsible (jay) drdr:command-line #f
 "collects/meta/images/mkheart.rkt" drdr:command-line #f
+"collects/meta/props" drdr:command-line (racket *) responsible (eli jay)
 "collects/meta/web" drdr:command-line #f
 "collects/mred" responsible (mflatt)
 "collects/mred/edit-main.rkt" drdr:command-line (mzc *)
-"collects/mred/edit.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/lang/main.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/main.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/mred-unit.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/mred.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/app.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/check.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/const.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/dynamic.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/editor.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/filedialog.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/fontdialog.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/gdi.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/helper.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/kernel.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/lock.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/messagebox.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/misc.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/moredialogs.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/mrcanvas.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/mrcontainer.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/mritem.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/mrmenu.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/mrpanel.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/mrpopup.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/mrtextfield.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/mrtop.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/mrwindow.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/path-dialog.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/repl.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/snipfile.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/mred/private/wx/cocoa" drdr:command-line #f
 "collects/mred/private/wx/win32" drdr:command-line #f
-"collects/mred/private/wx.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/wxcanvas.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/wxcontainer.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/wxgroupbox.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/wxitem.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/wxme/editor-admin.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/wxme/editor-canvas.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/wxme/editor-snip.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/wxme/editor.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/wxme/keymap.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/wxme/mline.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/wxme/pasteboard.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/wxme/snip-admin.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/wxme/snip.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/wxme/stream.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/wxme/style.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/wxme/text.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/wxme/undo.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/wxme/wx.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/wxmenu.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/wxpanel.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/wxtabgroup.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/wxtextfield.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/wxtop.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mred/private/wxwindow.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/mrlib" responsible (mflatt robby)
-"collects/mrlib/aligned-pasteboard.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/bitmap-label.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/cache-image-snip.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/click-forwarding-editor.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/close-icon.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/gif.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/graph.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/hierlist/hierlist-unit.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/hierlist.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/image-core.rkt" drdr:command-line (gracket "-t" *)
-"collects/mrlib/include-bitmap.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/interactive-value-port.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/matrix-snip.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/name-message.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/path-dialog.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/plot.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/private/aligned-pasteboard/aligned-editor-container.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/private/aligned-pasteboard/aligned-pasteboard.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/private/aligned-pasteboard/geometry-managed-pasteboard.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/private/aligned-pasteboard/interface.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/private/aligned-pasteboard/locked-pasteboard.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/private/aligned-pasteboard/pasteboard-lib.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/private/aligned-pasteboard/snip-lib.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/private/aligned-pasteboard/stretchable-editor-snip.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/private/aligned-pasteboard/tests/actual-bigger.rktl" drdr:command-line (gracket "-f" *)
-"collects/mrlib/private/aligned-pasteboard/tests/edit-sequence-loop.rktl" drdr:command-line (gracket "-f" *)
+"collects/mrlib/private/aligned-pasteboard/tests/actual-bigger.rkt" drdr:command-line (gracket *)
 "collects/mrlib/private/aligned-pasteboard/tests/example-min.rkt" drdr:command-line #f
 "collects/mrlib/private/aligned-pasteboard/tests/example.rkt" drdr:command-line #f
-"collects/mrlib/private/aligned-pasteboard/tests/insertion-without-display.rktl" drdr:command-line (gracket "-f" *)
 "collects/mrlib/private/aligned-pasteboard/tests/minimal.rkt" drdr:command-line #f
 "collects/mrlib/private/aligned-pasteboard/tests/more-tests-margin-aligned.rkt" drdr:command-line #f
 "collects/mrlib/private/aligned-pasteboard/tests/more-tests-margin.rkt" drdr:command-line #f
@@ -1112,20 +823,13 @@ path/s is either such a string or a list of them.
 "collects/mrlib/private/aligned-pasteboard/tests/more-tests-min.rkt" drdr:command-line #f
 "collects/mrlib/private/aligned-pasteboard/tests/more-tests-text.rkt" drdr:command-line #f
 "collects/mrlib/private/aligned-pasteboard/tests/more-tests.rkt" drdr:command-line #f
-"collects/mrlib/private/aligned-pasteboard/tests/snip-dumper.rkt" drdr:command-line (gracket-text "-t" *)
+"collects/mrlib/private/aligned-pasteboard/tests/old-bugs" drdr:command-line #f
 "collects/mrlib/private/aligned-pasteboard/tests/stretchable-editor-snip-test-min.rkt" drdr:command-line #f
 "collects/mrlib/private/aligned-pasteboard/tests/stretchable-editor-snip-test.rkt" drdr:command-line #f
-"collects/mrlib/private/aligned-pasteboard/tests/test-alignment.rktl" drdr:command-line (gracket "-f" *)
 "collects/mrlib/private/aligned-pasteboard/tests/test-locked-pasteboard.rkt" drdr:command-line #f
-"collects/mrlib/private/aligned-pasteboard/tests/test-pasteboard-lib.rktl" drdr:command-line (gracket "-f" *)
-"collects/mrlib/private/aligned-pasteboard/tests/test-snip-lib.rktl" drdr:command-line (gracket "-f" *)
-"collects/mrlib/private/aligned-pasteboard/tests/test.rktl" drdr:command-line (gracket "-f" *)
-"collects/mrlib/private/aligned-pasteboard/tests/test2.rktl" drdr:command-line (gracket "-f" *)
-"collects/mrlib/private/image-core-bitmap.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/switchable-button.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/syntax-browser.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/tab-choice.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/mrlib/text-string-style-desc.rkt" drdr:command-line (gracket-text "-t" *)
+"collects/mrlib/private/aligned-pasteboard/tests/test-snip-lib.rkt" drdr:command-line (gracket *)
+"collects/mrlib/private/aligned-pasteboard/tests/test.rkt" drdr:command-line (gracket *)
+"collects/mrlib/private/aligned-pasteboard/tests/test2.rkt" drdr:command-line (gracket *)
 "collects/mysterx" responsible (mflatt)
 "collects/mysterx/main.rkt" drdr:command-line (mzc *)
 "collects/mysterx/mysterx.rkt" drdr:command-line (mzc *)
@@ -1154,7 +858,6 @@ path/s is either such a string or a list of them.
 "collects/parser-tools/private-lex/error-tests.rkt" drdr:command-line #f
 "collects/picturing-programs" responsible (sbloch)
 "collects/plai" responsible (jay)
-"collects/plai/private/gc-gui.rkt" drdr:command-line (gracket "-t" *)
 "collects/planet" responsible (robby)
 "collects/plot" responsible (ntoronto)
 "collects/plot/scribblings/plot.scrbl" drdr:timeout 180
@@ -1173,40 +876,29 @@ path/s is either such a string or a list of them.
 "collects/racket/contract/private/guts.rkt" responsible (robby)
 "collects/racket/contract/private/helpers.rkt" responsible (robby)
 "collects/racket/generic.rkt" responsible (asumu stamourv)
-"collects/racket/gui/base.rkt" drdr:command-line (gracket "-t" *)
-"collects/racket/gui/init.rkt" drdr:command-line (gracket "-t" *)
-"collects/racket/gui.rkt" drdr:command-line (gracket "-t" *)
 "collects/racket/match" responsible (samth)
 "collects/racket/match.rkt" responsible (samth)
 "collects/racket/place" responsible (tewk)
 "collects/racket/place/distributed/examples/hello-world.rkt" drdr:command-line #f
 "collects/racket/private/generic.rkt" responsible (asumu stamourv)
-"collects/racket/slice.rkt" responsible (jay)
 "collects/racklog" responsible (jay)
 "collects/rackunit" responsible (jay noel ryanc)
-"collects/rackunit/gui.rkt" responsible (ryanc) drdr:command-line (gracket-text "-t" *)
+"collects/rackunit/gui.rkt" responsible (ryanc)
 "collects/rackunit/private/gui" responsible (ryanc)
-"collects/rackunit/private/gui/config.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/rackunit/private/gui/controller.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/rackunit/private/gui/gui.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/rackunit/private/gui/model2rml.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/rackunit/private/gui/rml.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/rackunit/private/gui/view.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/rackunit/scribblings/file-test.rkt" drdr:command-line #f
-"collects/rackunit/tool.rkt" responsible (ryanc) drdr:command-line (gracket-text "-t" *)
+"collects/rackunit/tool.rkt" responsible (ryanc)
 "collects/raco" responsible (mflatt)
 "collects/raco/main.rkt" drdr:command-line #f
 "collects/raco/raco.rkt" drdr:command-line #f
 "collects/reader" responsible (mflatt)
 "collects/readline" responsible (mflatt)
 "collects/redex" responsible (clklein robby)
-"collects/redex/examples/arithmetic.rkt" drdr:command-line (gracket-text "-t" * "--" "--no-print")
-"collects/redex/examples/beginner.rkt" drdr:command-line (racket "-t" * "-m")
+"collects/redex/examples/arithmetic.rkt" drdr:command-line (racket * "--no-print")
 "collects/redex/examples/church.rkt" drdr:command-line (mzc *)
 "collects/redex/examples/combinators.rkt" drdr:command-line (mzc *)
 "collects/redex/examples/compatible-closure.rkt" drdr:command-line (mzc *)
 "collects/redex/examples/delim-cont/randomized-tests-test.rkt" drdr:timeout 240 drdr:random #t
-"collects/redex/examples/delim-cont/randomized-tests.rkt" drdr:command-line (racket "-tm" * "--" "--rules" "2250" "--size" "3") drdr:timeout 240 drdr:random #t
+"collects/redex/examples/delim-cont/randomized-tests.rkt" drdr:command-line (racket * "--rules" "2250" "--size" "3") drdr:timeout 240 drdr:random #t
 "collects/redex/examples/delim-cont/test.rkt" drdr:command-line (mzc *)
 "collects/redex/examples/letrec.rkt" drdr:command-line (mzc *)
 "collects/redex/examples/list-machine/slides.rkt" drdr:command-line (raco "make" *)
@@ -1214,36 +906,22 @@ path/s is either such a string or a list of them.
 "collects/redex/examples/r6rs/r6rs-tests.rkt" drdr:command-line (mzc *)
 "collects/redex/examples/r6rs/racket-vs-redex.rkt" drdr:timeout 180
 "collects/redex/examples/r6rs/show-examples.rkt" drdr:command-line (mzc *)
-"collects/redex/examples/racket-machine/examples.rkt" drdr:command-line (gracket * "--no-pop-ups")
+"collects/redex/examples/racket-machine/examples.rkt" drdr:command-line (racket * "--no-pop-ups")
 "collects/redex/examples/racket-machine/impl-exec.rkt" drdr:command-line (raco "make" *)
-"collects/redex/examples/racket-machine/randomized-tests.rkt" drdr:command-line (racket "-t" * "-m") drdr:timeout 300
+"collects/redex/examples/racket-machine/randomized-tests.rkt" drdr:timeout 300
 "collects/redex/examples/racket-machine/reduction-test.rkt" drdr:command-line (mzc *)
 "collects/redex/examples/racket-machine/verification-test.rkt" drdr:command-line (mzc *)
 "collects/redex/examples/semaphores.rkt" drdr:command-line (mzc *)
 "collects/redex/examples/subject-reduction.rkt" drdr:command-line (mzc *)
 "collects/redex/examples/threads.rkt" drdr:command-line (mzc *)
 "collects/redex/examples/types.rkt" drdr:command-line (mzc *)
-"collects/redex/gui.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/redex/main.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/redex/pict.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/redex/private/arrow.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/redex/private/compiler/match.rkt" drdr:command-line #f
-"collects/redex/private/compiler/redextomatrix.rkt" drdr:command-line #f
-"collects/redex/private/core-layout.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/redex/private/dot.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/redex/private/pict.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/redex/private/sexp-diffs.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/redex/private/size-snip.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/redex/private/stepper.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/redex/private/traces.rkt" drdr:command-line (gracket-text "-t" *)
+"collects/redex/private/compiler" drdr:command-line #f
 "collects/redex/redex.scrbl" drdr:timeout 300
 "collects/redex/scribblings/tut.scrbl" drdr:timeout 300
-"collects/redex/tests/bitmap-test-util.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/redex/tests/bitmap-test.rkt" drdr:command-line (mzc "-k" *)
 "collects/redex/tests/check-syntax-test.rkt" drdr:command-line (mzc *)
 "collects/redex/tests/color-test.rkt" drdr:command-line (mzc *)
-"collects/redex/tests/compiler/matrix-tests.rkt" drdr:command-line #f
-"collects/redex/tests/compiler/redex-tests.rkt" drdr:command-line #f
+"collects/redex/tests/compiler" drdr:command-line #f
 "collects/redex/tests/core-layout-test.rkt" drdr:command-line (mzc *)
 "collects/redex/tests/hole-test.rkt" drdr:command-line (mzc *)
 "collects/redex/tests/keyword-macros-test.rkt" drdr:command-line (mzc *)
@@ -1255,16 +933,11 @@ path/s is either such a string or a list of them.
 "collects/redex/tests/term-test.rkt" drdr:command-line (mzc *)
 "collects/redex/tests/tl-test.rkt" drdr:command-line (mzc *)
 "collects/repo-time-stamp" responsible (eli)
-"collects/repo-time-stamp/time-stamp.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/rnrs" responsible (mflatt)
 "collects/s-exp" responsible (eli mflatt)
 "collects/scheme" responsible (mflatt)
-"collects/scheme/gui/base.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/scheme/gui/init.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/scheme/gui.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/scheme/match.rkt" responsible (samth)
 "collects/schemeunit" responsible (jay)
-"collects/schemeunit/gui.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/scribble" responsible (mflatt eli)
 "collects/scribble/html" responsible (eli)
 "collects/scribble/html.rkt" responsible (eli)
@@ -1275,71 +948,34 @@ path/s is either such a string or a list of them.
 "collects/scribble/text.rkt" responsible (eli)
 "collects/scribble/tools" responsible (robby)
 "collects/scribble/tools/drracket-buttons.rkt" drdr:command-line #f
-"collects/scribble/tools/private/mk-drs-bitmaps.rkt" drdr:command-line (gracket-text * "skip")
+"collects/scribble/tools/private/mk-drs-bitmaps.rkt" drdr:command-line (racket * "skip")
 "collects/scribblings" responsible (mflatt eli robby matthias)
 "collects/scribblings/drracket" responsible (robby)
 "collects/scribblings/drracket/incremental-keybindings.rkt" drdr:command-line #f
 "collects/scribblings/framework" responsible (robby)
-"collects/scribblings/framework/standard-menus.scrbl" drdr:command-line #f
-"collects/scribblings/guide/contracts-examples/6.rkt" drdr:command-line (racket "-f" *)
-"collects/scribblings/guide/read.scrbl" drdr:command-line #f
 "collects/scribblings/raco" responsible (jay mflatt)
 "collects/scribblings/reference/distributed.scrbl" responsible (tewk)
 "collects/scribblings/reference/generic.scrbl" responsible (asumu stamourv)
 "collects/scriblib" responsible (mflatt)
 "collects/setup" responsible (mflatt)
 "collects/setup/main.rkt" drdr:command-line #f
-"collects/setup/parallel-build-worker.rkt" drdr:command-line #f
-"collects/setup/plt-installer.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/setup/setup-go.rkt" drdr:command-line #f
 "collects/setup/unixstyle-install.rkt" drdr:command-line (mzc *)
 "collects/setup/winvers.rkt" drdr:command-line (mzc *)
 "collects/sgl" responsible (jay)
-"collects/sgl/bitmap.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/sgl/examples/alpha.rkt" drdr:command-line (mzc *)
 "collects/sgl/examples/gears.rkt" drdr:command-line (mzc "-k" *)
-"collects/sgl/examples/gl-frame.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/sirmail" responsible (mflatt)
-"collects/sirmail/folderr.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/sirmail/main.rkt" drdr:command-line (mzc *)
-"collects/sirmail/optionr.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/sirmail/pref.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/sirmail/readr.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/sirmail/recover.rkt" drdr:command-line (racket "-f" *)
-"collects/sirmail/sendr.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/sirmail/sirmail.rkt" drdr:command-line (mzc *)
-"collects/sirmail/sirmailr.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/sirmail/spell.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/slatex" responsible (sstrickl)
 "collects/slatex/pdf-slatex-launcher.rkt" drdr:command-line (mzc *)
 "collects/slatex/slatex-launcher.rkt" drdr:command-line (mzc *)
 "collects/slideshow" responsible (mflatt robby)
-"collects/slideshow/balloon.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/slideshow/base.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/slideshow/cmdline.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/slideshow/code.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/slideshow/core.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/slideshow/examples/interlocking-components.scm" drdr:command-line (mzc *)
-"collects/slideshow/face.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/slideshow/flash.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/slideshow/initial-ones.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/slideshow/main.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/slideshow/param.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/slideshow/pict-snipclass.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/slideshow/pict.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/slideshow/play.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/slideshow/private/image-snipr.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/slideshow/private/pict-box-lib.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/slideshow/private/utils.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/slideshow/run.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/slideshow/slide.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/slideshow/slides-to-picts.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/slideshow/slideshow.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/slideshow/start.rkt" drdr:command-line (mzc *)
-"collects/slideshow/step.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/slideshow/tool.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/slideshow/tutorial-show.rkt" drdr:command-line (mzc *)
-"collects/slideshow/viewer.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/srfi" responsible (noel chongkai jay)
 "collects/srfi/25/arlib.scm" drdr:command-line #f
 "collects/srfi/25/ix-ctor.scm" drdr:command-line #f
@@ -1349,18 +985,8 @@ path/s is either such a string or a list of them.
 "collects/srfi/78/check-reference.scm" drdr:command-line #f
 "collects/srfi/78/examples-78.scm" drdr:command-line #f
 "collects/stepper" responsible (clements)
-"collects/stepper/drracket-button.rkt" drdr:command-line (gracket-text *)
-"collects/stepper/private/display-break-stuff.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/stepper/private/mred-extensions.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/stepper/private/vertical-separator-snip.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/stepper/private/xml-snip-helpers.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/stepper/stepper+xml-tool.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/stepper/stepper-tool.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/stepper/view-controller.rkt" drdr:command-line (gracket "-t" *)
-"collects/stepper/xml-tool.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/string-constants" responsible (robby)
 "collects/swindle" responsible (eli)
-"collects/swindle/tool.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/syntax" responsible (mflatt)
 "collects/syntax/parse" responsible (ryanc)
 "collects/syntax/parse.rkt" responsible (ryanc)
@@ -1368,104 +994,49 @@ path/s is either such a string or a list of them.
 "collects/syntax/scribblings/parse.scrbl" responsible (ryanc)
 "collects/syntax-color" responsible (mflatt)
 "collects/teachpack" responsible (matthias)
-"collects/teachpack/2htdp/image.ss" drdr:command-line (gracket *)
-"collects/teachpack/2htdp/scribblings/image-gen.rkt" responsible (robby) drdr:command-line (gracket-text *)
-"collects/teachpack/2htdp/scribblings/image-toc.rkt" responsible (robby)
 "collects/teachpack/2htdp/scribblings/image-util.rkt" responsible (robby)
 "collects/teachpack/2htdp/scribblings/image.scrbl" responsible (robby)
-"collects/teachpack/2htdp/universe.ss" drdr:command-line (gracket-text "-t" *)
 "collects/teachpack/balls.ss" drdr:command-line (mzc *)
-"collects/teachpack/deinprogramm/image.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/deinprogramm/image2.ss" drdr:command-line (gracket "-t" *)
-"collects/teachpack/deinprogramm/line3d.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/deinprogramm/sound.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/deinprogramm/turtle.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/deinprogramm/universe.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/deinprogramm/world.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/door.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/htdp/arrow-gui.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/htdp/arrow.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/htdp/convert.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/htdp/draw.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/htdp/elevator.ss" drdr:command-line (gracket-text "-t" *)
+"collects/teachpack/deinprogramm" responsible (sperber)
 "collects/teachpack/htdp/graphing.ss" drdr:command-line (mzc *)
-"collects/teachpack/htdp/guess-gui.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/htdp/guess.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/htdp/gui.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/htdp/hangman.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/htdp/image.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/htdp/lkup-gui.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/htdp/master.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/htdp/matrix.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/htdp/show-queen.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/htdp/world.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/nuworld.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/server.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/turtles.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/value-turtles.ss" drdr:command-line (gracket-text "-t" *)
-"collects/teachpack/world.ss" drdr:command-line (gracket-text "-t" *)
 "collects/test-box-recovery" responsible (mflatt)
-"collects/test-box-recovery/tool.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/test-engine" responsible (kathyg)
-"collects/test-engine/racket-gui.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/test-engine/scheme-gui.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/test-engine/test-coverage.scm" drdr:command-line (gracket-text "-t" *)
-"collects/test-engine/test-display.scm" drdr:command-line (gracket-text "-t" *)
-"collects/test-engine/test-tool.scm" drdr:command-line (gracket-text "-t" *)
-"collects/tests/aligned-pasteboard/example.rktl" drdr:command-line #f
-"collects/tests/aligned-pasteboard/old-bugs/big-min.rktl" drdr:command-line #f
-"collects/tests/aligned-pasteboard/old-bugs/missing-min.rktl" drdr:command-line #f
-"collects/tests/aligned-pasteboard/snip-dumper.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/tests/aligned-pasteboard/test-alignment.rktl" drdr:command-line #f
-"collects/tests/aligned-pasteboard/test-pasteboard-lib.rktl" drdr:command-line #f
-"collects/tests/aligned-pasteboard/test-snip-lib.rktl" drdr:command-line #f
-"collects/tests/aligned-pasteboard/test.rktl" drdr:command-line (gracket "-f" *)
-"collects/tests/aligned-pasteboard/test2.rktl" drdr:command-line (gracket "-f" *)
+"collects/tests/algol60" responsible (mflatt robby)
 "collects/tests/compiler" responsible (jay)
 "collects/tests/compiler/demodularizer/demod-test.rkt" drdr:timeout 600
 "collects/tests/compiler/regression.rkt" responsible (mflatt)
 "collects/tests/compiler/test" drdr:command-line (raco "test" "-r" "--" *)
 "collects/tests/compiler/zo-test-worker.rkt" drdr:command-line #f
-"collects/tests/compiler/zo-test.rkt" drdr:command-line (racket "-t" * "--" "-I" "-S" "-t" "60" "-v" "-R") drdr:random #t
+"collects/tests/compiler/zo-test.rkt" drdr:command-line (racket * "-I" "-S" "-t" "60" "-v" "-R") drdr:random #t
 "collects/tests/data" responsible (ryanc)
 "collects/tests/datalog" responsible (jay)
 "collects/tests/db" responsible (ryanc)
 "collects/tests/deinprogramm" responsible (sperber)
-"collects/tests/deinprogramm/image.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/tests/deinprogramm/run-image-test.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/tests/drracket" responsible (robby) drdr:random #t
-"collects/tests/drracket/drracket-test-util.rkt" drdr:command-line (gracket "-t" *)
 "collects/tests/drracket/easter-egg.rkt" drdr:timeout 240
-"collects/tests/drracket/example-tool.rkt" drdr:command-line (gracket "-t" *)
-"collects/tests/drracket/get-defs-test.rkt" drdr:command-line (gracket *)
+"collects/tests/drracket/example-tool.rkt" drdr:command-line (gracket *)
 "collects/tests/drracket/hangman.rkt" responsible (robby matthias) drdr:command-line (gracket *)
 "collects/tests/drracket/io.rkt" drdr:command-line (gracket *) drdr:timeout 500
 "collects/tests/drracket/language-test.rkt" responsible (robby matthias) drdr:command-line (gracket *) drdr:timeout 1500
-"collects/tests/drracket/leaky-frame.rkt" drdr:command-line (gracket *)
 "collects/tests/drracket/memory-log.rkt" drdr:command-line (gracket *)
-"collects/tests/drracket/module-lang-test-utils.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/tests/drracket/module-lang-test.rkt" drdr:command-line (gracket "-j" "-e" "(void (putenv  \"PLTDRDRTEST\" \"yes\"))" "-t" *) drdr:timeout 400
+"collects/tests/drracket/module-lang-test.rkt" drdr:command-line (gracket "-j" "-e" "(void (putenv \"PLTDRDRTEST\" \"yes\"))" "-t" *) drdr:timeout 400
 "collects/tests/drracket/randomly-click-language-dialog.rkt" drdr:command-line (mzc *)
 "collects/tests/drracket/randomly-click-preferences.rkt" drdr:command-line (mzc *)
-"collects/tests/drracket/randomly-click.rkt" drdr:command-line #f
 "collects/tests/drracket/repl-test-debug.rkt" drdr:command-line (gracket *) drdr:timeout 300
 "collects/tests/drracket/repl-test-debugprofile.rkt" drdr:command-line (gracket *) drdr:timeout 300
 "collects/tests/drracket/repl-test-misc.rkt" drdr:command-line (gracket *)
 "collects/tests/drracket/repl-test-raw.rkt" drdr:command-line (gracket *) drdr:timeout 300
-"collects/tests/drracket/repl-test.rkt" drdr:command-line (gracket *) drdr:timeout 600
-"collects/tests/drracket/sample-solutions-one-window.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/tests/drracket/snip/collapsed.rkt" drdr:command-line (racket "-l" "racket/gui/base" "-t" *)
 "collects/tests/drracket/snip/run-all.rkt" drdr:timeout 400
 "collects/tests/drracket/snips.rkt" drdr:command-line (gracket *)
-"collects/tests/drracket/stepper-test.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/tests/drracket/syncheck-test.rkt" drdr:command-line (gracket *) drdr:timeout 200
 "collects/tests/drracket/teaching-lang-coverage.rkt" responsible (robby matthias) drdr:command-line (gracket *)
 "collects/tests/drracket/teaching-lang-save-file.rkt" responsible (robby matthias) drdr:command-line (gracket *)
 "collects/tests/drracket/teachpack.rkt" responsible (robby matthias) drdr:command-line (gracket *)
 "collects/tests/drracket/test-engine-test.rkt" responsible (sperber) drdr:command-line (gracket *) drdr:timeout 480
-"collects/tests/drracket/time-keystrokes.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/tests/eli-tester.rkt" responsible (eli)
 "collects/tests/eopl" responsible (dvanhorn)
+"collects/tests/errortrace" responsible (mflatt)
 "collects/tests/errortrace/alert.rkt" responsible (eli)
 "collects/tests/errortrace/main.rkt" drdr:command-line #f
 "collects/tests/file" responsible (eli mflatt)
@@ -1478,7 +1049,6 @@ path/s is either such a string or a list of them.
 "collects/tests/framework/framework-test-engine.rkt" drdr:command-line (mzc "-k" *)
 "collects/tests/framework/group-test.rkt" drdr:command-line (mzc "-k" *)
 "collects/tests/framework/handler-test.rkt" drdr:command-line (mzc "-k" *)
-"collects/tests/framework/info.rkt" drdr:command-line (mzc "-k" *)
 "collects/tests/framework/keys.rkt" drdr:command-line (mzc "-k" *)
 "collects/tests/framework/load.rkt" drdr:command-line (mzc "-k" *)
 "collects/tests/framework/main.rkt" drdr:command-line (gracket *) drdr:timeout 240
@@ -1487,13 +1057,10 @@ path/s is either such a string or a list of them.
 "collects/tests/framework/panel.rkt" drdr:command-line (mzc "-k" *)
 "collects/tests/framework/pasteboard.rkt" drdr:command-line (mzc "-k" *)
 "collects/tests/framework/prefs.rkt" drdr:command-line (mzc "-k" *)
-"collects/tests/framework/scheme.rkt" drdr:command-line (mzc "-k" *)
 "collects/tests/framework/search.rkt" drdr:command-line (mzc "-k" *)
 "collects/tests/framework/test-suite-utils.rkt" drdr:command-line (mzc "-k" *)
 "collects/tests/framework/text.rkt" drdr:command-line (mzc "-k" *)
-"collects/tests/framework/utils.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/frtime" responsible (gcooper jay)
-"collects/tests/frtime/time.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/tests/future" responsible (jamesswaine mflatt robby)
 "collects/tests/future/future.rkt" drdr:timeout 200
 "collects/tests/future/random-future.rkt" drdr:timeout 480
@@ -1501,44 +1068,32 @@ path/s is either such a string or a list of them.
 "collects/tests/gracket" responsible (mflatt)
 "collects/tests/gracket/auto.rktl" drdr:command-line #f
 "collects/tests/gracket/blits.rkt" drdr:command-line #f
-"collects/tests/gracket/dc.rktl" drdr:command-line (gracket "-f" *)
 "collects/tests/gracket/draw.rkt" drdr:command-line (mzc *)
-"collects/tests/gracket/editor.rktl" drdr:command-line (gracket "-f" *)
 "collects/tests/gracket/flush-stress.rkt" drdr:command-line #f
-"collects/tests/gracket/gui-main.rktl" drdr:command-line (gracket "-f" *)
-"collects/tests/gracket/gui.rktl" drdr:command-line (gracket "-f" *)
 "collects/tests/gracket/item.rkt" drdr:command-line (mzc *)
-"collects/tests/gracket/loadtest.rktl" drdr:command-line (gracket "-f" *)
 "collects/tests/gracket/mem.rkt" drdr:command-line #f
 "collects/tests/gracket/paramz.rktl" drdr:command-line (gracket "-f" *)
 "collects/tests/gracket/png.rktl" drdr:command-line #f
-"collects/tests/gracket/random.rktl" drdr:command-line #f
 "collects/tests/gracket/showkey.rkt" drdr:command-line #f
 "collects/tests/gracket/sixlib.rktl" drdr:command-line #f
-"collects/tests/gracket/test-editor-admin.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/tests/gracket/testing.rktl" drdr:command-line (gracket "-f" *)
 "collects/tests/gracket/text-scale.rktl" drdr:command-line #f
 "collects/tests/gracket/unflushed-circle.rkt" drdr:command-line #f
 "collects/tests/gracket/windowing.rktl" drdr:command-line (gracket "-f" *)
 "collects/tests/gracket/wxme-doc-random.rkt" drdr:command-line (mzc *)
 "collects/tests/gracket/wxme-random.rkt" drdr:command-line #f
-"collects/tests/gracket/wxme.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/tests/honu" responsible (rafkind)
 "collects/tests/htdp-lang" responsible (robby mflatt matthias)
-"collects/tests/htdp-lang/advanced.rktl" drdr:command-line (racket "-f" *) drdr:timeout 360
-"collects/tests/htdp-lang/basic.rktl" drdr:command-line #f
+"collects/tests/htdp-lang/advanced.rktl" drdr:timeout 360
 "collects/tests/htdp-lang/beg-adv.rktl" drdr:command-line #f
 "collects/tests/htdp-lang/beg-bega.rktl" drdr:command-line #f
 "collects/tests/htdp-lang/beg-intm.rktl" drdr:command-line #f
 "collects/tests/htdp-lang/beg-intml.rktl" drdr:command-line #f
 "collects/tests/htdp-lang/bega-adv.rktl" drdr:command-line #f
-"collects/tests/htdp-lang/beginner-abbr.rktl" drdr:command-line (racket "-f" *) drdr:timeout 300
-"collects/tests/htdp-lang/beginner.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/htdp-lang/htdp-image.rktl" responsible (robby) drdr:command-line (gracket "-f" *)
-"collects/tests/htdp-lang/htdp-test.rktl" drdr:command-line (racket "-f" *)
+"collects/tests/htdp-lang/beginner-abbr.rktl" drdr:timeout 300
+"collects/tests/htdp-lang/htdp-image.rktl" responsible (robby)
 "collects/tests/htdp-lang/htdp.rktl" drdr:command-line #f
-"collects/tests/htdp-lang/intermediate-lambda.rktl" drdr:command-line (racket "-f" *) drdr:timeout 360
-"collects/tests/htdp-lang/intermediate.rktl" drdr:command-line (racket "-f" *) drdr:timeout 360
+"collects/tests/htdp-lang/intermediate-lambda.rktl" drdr:timeout 360
+"collects/tests/htdp-lang/intermediate.rktl" drdr:timeout 360
 "collects/tests/htdp-lang/intm-adv.rktl" drdr:command-line #f
 "collects/tests/htdp-lang/intm-intml.rktl" drdr:command-line #f
 "collects/tests/htdp-lang/intmlam-adv.rktl" drdr:command-line #f
@@ -1557,8 +1112,6 @@ path/s is either such a string or a list of them.
 "collects/tests/lazy/main.rkt" drdr:command-line #f
 "collects/tests/macro-debugger" responsible (ryanc)
 "collects/tests/macro-debugger/all-tests.rkt" drdr:command-line (racket * "--text")
-"collects/tests/macro-debugger/gui-tests.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/tests/macro-debugger/tests/collects.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/tests/match" responsible (samth)
 "collects/tests/mysterx" responsible (mflatt)
 "collects/tests/mzcom" responsible (mflatt)
@@ -1572,24 +1125,12 @@ path/s is either such a string or a list of them.
 "collects/tests/net/websocket.rkt" responsible (jay)
 "collects/tests/openssl" responsible (mflatt)
 "collects/tests/plai" responsible (jay)
-"collects/tests/plai/gc/bad-mutators/mut-1.rkt" drdr:command-line #f
-"collects/tests/plai/gc/bad-mutators/mutator0.rkt" drdr:command-line #f
-"collects/tests/plai/gc/bad-mutators/mutator1.rkt" drdr:command-line #f
-"collects/tests/plai/gc/bad-mutators/mutator2.rkt" drdr:command-line #f
-"collects/tests/plai/gc/bad-mutators/mutator3.rkt" drdr:command-line #f
-"collects/tests/plai/gc/bad-mutators/mutator5.rkt" drdr:command-line #f
-"collects/tests/plai/gc/bad-mutators/void-app.rkt" drdr:command-line #f
+"collects/tests/plai/gc/bad-mutators" drdr:command-line #f
 "collects/tests/plai/gc/other-mutators" drdr:command-line #f
-"collects/tests/plai/gc/run-test.rkt" drdr:command-line (racket "-qt" * "--" "-g")
-"collects/tests/plai/gc2/bad-mutators/mut-1.rkt" drdr:command-line #f
-"collects/tests/plai/gc2/bad-mutators/mutator0.rkt" drdr:command-line #f
-"collects/tests/plai/gc2/bad-mutators/mutator1.rkt" drdr:command-line #f
-"collects/tests/plai/gc2/bad-mutators/mutator2.rkt" drdr:command-line #f
-"collects/tests/plai/gc2/bad-mutators/mutator3.rkt" drdr:command-line #f
-"collects/tests/plai/gc2/bad-mutators/mutator5.rkt" drdr:command-line #f
-"collects/tests/plai/gc2/bad-mutators/void-app.rkt" drdr:command-line #f
+"collects/tests/plai/gc/run-test.rkt" drdr:command-line (racket * "-g")
+"collects/tests/plai/gc2/bad-mutators" drdr:command-line #f
 "collects/tests/plai/gc2/other-mutators" drdr:command-line #f
-"collects/tests/plai/gc2/run-test.rkt" drdr:command-line (racket "-qt" * "--" "-g")
+"collects/tests/plai/gc2/run-test.rkt" drdr:command-line (racket * "-g")
 "collects/tests/plai/test-random-mutator.rkt" responsible (jay robby)
 "collects/tests/plai/web.rkt" drdr:command-line (mzc "-k" *)
 "collects/tests/planet" responsible (robby jay)
@@ -1598,7 +1139,7 @@ path/s is either such a string or a list of them.
 "collects/tests/planet/examples/dummy-module.rkt" drdr:command-line #f
 "collects/tests/planet/examples/scribblings-package" drdr:command-line #f
 "collects/tests/planet/lang.rkt" drdr:command-line (raco "make" *)
-"collects/tests/planet/run-all.rkt" drdr:command-line (racket *) drdr:timeout 240
+"collects/tests/planet/run-all.rkt" drdr:timeout 240
 "collects/tests/planet/test-docs-complete.rkt" drdr:command-line (raco "make" *)
 "collects/tests/planet/thread-safe-resolver.rkt" drdr:command-line (raco "make" *) drdr:timeout 1000
 "collects/tests/planet/version.rkt" drdr:command-line (raco "make" *)
@@ -1606,13 +1147,11 @@ path/s is either such a string or a list of them.
 "collects/tests/r6rs" responsible (mflatt)
 "collects/tests/racket" responsible (mflatt)
 "collects/tests/racket/all.rktl" drdr:command-line #f
-"collects/tests/racket/async-channel.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/awk.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/common/auto.rkt" drdr:command-line (racket * "--" "racket" "earley")
 "collects/tests/racket/benchmarks/common/mk-bigloo.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/common/mk-chicken.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/common/mk-gambit.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/common/r5rs-wrap.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/benchmarks/common/typed" responsible (stamourv samth)
 "collects/tests/racket/benchmarks/common/typed/cpstak.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/common/typed/ctak.rktl" drdr:command-line #f
@@ -1637,127 +1176,125 @@ path/s is either such a string or a list of them.
 "collects/tests/racket/benchmarks/common/typed/takr.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/common/typed/takr2.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/common/typed/triangle.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/mz/expand-class.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/benchmarks/mz/parsing.rktl" drdr:command-line (gracket "-f" *)
 "collects/tests/racket/benchmarks/mz/redsem.rktl" drdr:command-line (racket "-f" * "--" "--skip-struct-test")
-"collects/tests/racket/benchmarks/mz/ssax.rktl" drdr:command-line (racket "-f" *) drdr:timeout 900
+"collects/tests/racket/benchmarks/mz/ssax.rktl" drdr:timeout 900
 "collects/tests/racket/benchmarks/places" drdr:command-line #f
-"collects/tests/racket/benchmarks/rx/auto.rkt" drdr:command-line (racket "-t" * "--" "racket" "simple") drdr:timeout 600
-"collects/tests/racket/benchmarks/shootout/ackermann.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/auto.rkt" drdr:command-line (racket "-qt" * "--" "hello")
-"collects/tests/racket/benchmarks/shootout/binarytrees-places.rkt" drdr:command-line (racket "-tm" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/binarytrees.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/chameneos.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/cheapconcurrency.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/fannkuch-redux.rkt" drdr:command-line (racket "-t" * "--" "4")
-"collects/tests/racket/benchmarks/shootout/fannkuch.rkt" drdr:command-line (racket "-t" * "--" "4")
-"collects/tests/racket/benchmarks/shootout/fasta-new.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/fasta.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/hash.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/hash2.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/mandelbrot-futures.rkt" drdr:command-line (racket "-t" * "--" "15")
-"collects/tests/racket/benchmarks/shootout/mandelbrot-generic.rkt" drdr:command-line (racket "-t" * "--" "15")
-"collects/tests/racket/benchmarks/shootout/mandelbrot.rkt" drdr:command-line (racket "-t" * "--" "15")
-"collects/tests/racket/benchmarks/shootout/meteor.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/nbody-generic.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/nbody-vec-generic.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/nbody-vec.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/nbody.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/nestedloop.rkt" drdr:command-line (racket "-t" * "--" "2")
-"collects/tests/racket/benchmarks/shootout/nsieve.rkt" drdr:command-line (racket "-t" * "--" "2")
-"collects/tests/racket/benchmarks/shootout/nsievebits.rkt" drdr:command-line (racket "-t" * "--" "2")
-"collects/tests/racket/benchmarks/shootout/partialsums.rkt" drdr:command-line (racket "-t" * "--" "25")
+"collects/tests/racket/benchmarks/rx/auto.rkt" drdr:command-line (racket * "racket" "simple") drdr:timeout 600
+"collects/tests/racket/benchmarks/shootout/ackermann.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/auto.rkt" drdr:command-line (racket * "hello")
+"collects/tests/racket/benchmarks/shootout/binarytrees-places.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/binarytrees.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/chameneos.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/cheapconcurrency.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/fannkuch-redux.rkt" drdr:command-line (racket * "4")
+"collects/tests/racket/benchmarks/shootout/fannkuch.rkt" drdr:command-line (racket * "4")
+"collects/tests/racket/benchmarks/shootout/fasta-new.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/fasta.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/hash.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/hash2.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/mandelbrot-futures.rkt" drdr:command-line (racket * "15")
+"collects/tests/racket/benchmarks/shootout/mandelbrot-generic.rkt" drdr:command-line (racket * "15")
+"collects/tests/racket/benchmarks/shootout/mandelbrot.rkt" drdr:command-line (racket * "15")
+"collects/tests/racket/benchmarks/shootout/meteor.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/nbody-generic.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/nbody-vec-generic.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/nbody-vec.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/nbody.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/nestedloop.rkt" drdr:command-line (racket * "2")
+"collects/tests/racket/benchmarks/shootout/nsieve.rkt" drdr:command-line (racket * "2")
+"collects/tests/racket/benchmarks/shootout/nsievebits.rkt" drdr:command-line (racket * "2")
+"collects/tests/racket/benchmarks/shootout/partialsums.rkt" drdr:command-line (racket * "25")
 "collects/tests/racket/benchmarks/shootout/pidigits-gmp.rkt" drdr:command-line (racket * "10")
-"collects/tests/racket/benchmarks/shootout/pidigits.rkt" drdr:command-line (racket "-t" * "--" "25")
-"collects/tests/racket/benchmarks/shootout/random.rkt" drdr:command-line (racket "-t" * "--" "25")
-"collects/tests/racket/benchmarks/shootout/recursive.rkt" drdr:command-line (racket "-t" * "--" "2")
+"collects/tests/racket/benchmarks/shootout/pidigits.rkt" drdr:command-line (racket * "25")
+"collects/tests/racket/benchmarks/shootout/random.rkt" drdr:command-line (racket * "25")
+"collects/tests/racket/benchmarks/shootout/recursive.rkt" drdr:command-line (racket * "2")
 "collects/tests/racket/benchmarks/shootout/run.rkt" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/spectralnorm-generic.rkt" drdr:command-line (racket "-t" * "--" "25")
-"collects/tests/racket/benchmarks/shootout/spectralnorm-par.rkt" drdr:command-line (racket "-t" * "--" "25")
-"collects/tests/racket/benchmarks/shootout/spectralnorm.rkt" drdr:command-line (racket "-t" * "--" "25")
+"collects/tests/racket/benchmarks/shootout/spectralnorm-generic.rkt" drdr:command-line (racket * "25")
+"collects/tests/racket/benchmarks/shootout/spectralnorm-par.rkt" drdr:command-line (racket * "25")
+"collects/tests/racket/benchmarks/shootout/spectralnorm.rkt" drdr:command-line (racket * "25")
 "collects/tests/racket/benchmarks/shootout/spellcheck.rkt" drdr:command-line (mzc *)
-"collects/tests/racket/benchmarks/shootout/strcat.rkt" drdr:command-line (racket "-t" * "--" "25")
-"collects/tests/racket/benchmarks/shootout/thread-ring.rkt" drdr:command-line (racket "-t" * "--" "25")
+"collects/tests/racket/benchmarks/shootout/strcat.rkt" drdr:command-line (racket * "25")
+"collects/tests/racket/benchmarks/shootout/thread-ring.rkt" drdr:command-line (racket * "25")
 "collects/tests/racket/benchmarks/shootout/typed" responsible (stamourv samth)
-"collects/tests/racket/benchmarks/shootout/typed/ackermann-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/typed/ackermann-optimizing.rkt" drdr:command-line (racket "-t" * "--" "10")
+"collects/tests/racket/benchmarks/shootout/typed/ackermann-non-optimizing.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/typed/ackermann-optimizing.rkt" drdr:command-line (racket * "10")
 "collects/tests/racket/benchmarks/shootout/typed/ackermann.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/shootout/typed/ary.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/binarytrees-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/typed/binarytrees-optimizing.rkt" drdr:command-line (racket "-t" * "--" "10")
+"collects/tests/racket/benchmarks/shootout/typed/binarytrees-non-optimizing.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/typed/binarytrees-optimizing.rkt" drdr:command-line (racket * "10")
 "collects/tests/racket/benchmarks/shootout/typed/binarytrees.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/chameneos-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/typed/chameneos-optimizing.rkt" drdr:command-line (racket "-t" * "--" "10")
+"collects/tests/racket/benchmarks/shootout/typed/chameneos-non-optimizing.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/typed/chameneos-optimizing.rkt" drdr:command-line (racket * "10")
 "collects/tests/racket/benchmarks/shootout/typed/chameneos.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/cheapconcurrency-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/typed/cheapconcurrency-optimizing.rkt" drdr:command-line (racket "-t" * "--" "10")
+"collects/tests/racket/benchmarks/shootout/typed/cheapconcurrency-non-optimizing.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/typed/cheapconcurrency-optimizing.rkt" drdr:command-line (racket * "10")
 "collects/tests/racket/benchmarks/shootout/typed/cheapconcurrency.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/shootout/typed/echo.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/shootout/typed/except.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/fannkuch-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "4")
-"collects/tests/racket/benchmarks/shootout/typed/fannkuch-optimizing.rkt" drdr:command-line (racket "-t" * "--" "4")
-"collects/tests/racket/benchmarks/shootout/typed/fannkuch-redux-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "4")
-"collects/tests/racket/benchmarks/shootout/typed/fannkuch-redux-optimizing.rkt" drdr:command-line (racket "-t" * "--" "4")
+"collects/tests/racket/benchmarks/shootout/typed/fannkuch-non-optimizing.rkt" drdr:command-line (racket * "4")
+"collects/tests/racket/benchmarks/shootout/typed/fannkuch-optimizing.rkt" drdr:command-line (racket * "4")
+"collects/tests/racket/benchmarks/shootout/typed/fannkuch-redux-non-optimizing.rkt" drdr:command-line (racket * "4")
+"collects/tests/racket/benchmarks/shootout/typed/fannkuch-redux-optimizing.rkt" drdr:command-line (racket * "4")
 "collects/tests/racket/benchmarks/shootout/typed/fannkuch-redux.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/shootout/typed/fannkuch.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/fasta-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/typed/fasta-optimizing.rkt" drdr:command-line (racket "-t" * "--" "10")
+"collects/tests/racket/benchmarks/shootout/typed/fasta-non-optimizing.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/typed/fasta-optimizing.rkt" drdr:command-line (racket * "10")
 "collects/tests/racket/benchmarks/shootout/typed/fasta.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/shootout/typed/fibo.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/hash-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/typed/hash-optimizing.rkt" drdr:command-line (racket "-t" * "--" "10")
+"collects/tests/racket/benchmarks/shootout/typed/hash-non-optimizing.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/typed/hash-optimizing.rkt" drdr:command-line (racket * "10")
 "collects/tests/racket/benchmarks/shootout/typed/hash.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/hash2-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/typed/hash2-optimizing.rkt" drdr:command-line (racket "-t" * "--" "10")
+"collects/tests/racket/benchmarks/shootout/typed/hash2-non-optimizing.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/typed/hash2-optimizing.rkt" drdr:command-line (racket * "10")
 "collects/tests/racket/benchmarks/shootout/typed/hash2.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/shootout/typed/heapsort.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/shootout/typed/hello.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/shootout/typed/k-nucleotide.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/shootout/typed/lists.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/mandelbrot-generic-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "15")
-"collects/tests/racket/benchmarks/shootout/typed/mandelbrot-generic-optimizing.rkt" drdr:command-line (racket "-t" * "--" "15")
+"collects/tests/racket/benchmarks/shootout/typed/mandelbrot-generic-non-optimizing.rkt" drdr:command-line (racket * "15")
+"collects/tests/racket/benchmarks/shootout/typed/mandelbrot-generic-optimizing.rkt" drdr:command-line (racket * "15")
 "collects/tests/racket/benchmarks/shootout/typed/mandelbrot-generic.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/mandelbrot-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "15")
-"collects/tests/racket/benchmarks/shootout/typed/mandelbrot-optimizing.rkt" drdr:command-line (racket "-t" * "--" "15")
+"collects/tests/racket/benchmarks/shootout/typed/mandelbrot-non-optimizing.rkt" drdr:command-line (racket * "15")
+"collects/tests/racket/benchmarks/shootout/typed/mandelbrot-optimizing.rkt" drdr:command-line (racket * "15")
 "collects/tests/racket/benchmarks/shootout/typed/mandelbrot.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/shootout/typed/matrix.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/meteor-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/typed/meteor-optimizing.rkt" drdr:command-line (racket "-t" * "--" "10")
+"collects/tests/racket/benchmarks/shootout/typed/meteor-non-optimizing.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/typed/meteor-optimizing.rkt" drdr:command-line (racket * "10")
 "collects/tests/racket/benchmarks/shootout/typed/meteor.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/shootout/typed/moments.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/nbody-generic-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/typed/nbody-generic-optimizing.rkt" drdr:command-line (racket "-t" * "--" "10")
+"collects/tests/racket/benchmarks/shootout/typed/nbody-generic-non-optimizing.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/typed/nbody-generic-optimizing.rkt" drdr:command-line (racket * "10")
 "collects/tests/racket/benchmarks/shootout/typed/nbody-generic.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/nbody-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/typed/nbody-optimizing.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/typed/nbody-vec-generic-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/typed/nbody-vec-generic-optimizing.rkt" drdr:command-line (racket "-t" * "--" "10")
+"collects/tests/racket/benchmarks/shootout/typed/nbody-non-optimizing.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/typed/nbody-optimizing.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/typed/nbody-vec-generic-non-optimizing.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/typed/nbody-vec-generic-optimizing.rkt" drdr:command-line (racket * "10")
 "collects/tests/racket/benchmarks/shootout/typed/nbody-vec-generic.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/nbody-vec-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "10")
-"collects/tests/racket/benchmarks/shootout/typed/nbody-vec-optimizing.rkt" drdr:command-line (racket "-t" * "--" "10")
+"collects/tests/racket/benchmarks/shootout/typed/nbody-vec-non-optimizing.rkt" drdr:command-line (racket * "10")
+"collects/tests/racket/benchmarks/shootout/typed/nbody-vec-optimizing.rkt" drdr:command-line (racket * "10")
 "collects/tests/racket/benchmarks/shootout/typed/nbody-vec.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/shootout/typed/nbody.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/nestedloop-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "2")
-"collects/tests/racket/benchmarks/shootout/typed/nestedloop-optimizing.rkt" drdr:command-line (racket "-t" * "--" "2")
+"collects/tests/racket/benchmarks/shootout/typed/nestedloop-non-optimizing.rkt" drdr:command-line (racket * "2")
+"collects/tests/racket/benchmarks/shootout/typed/nestedloop-optimizing.rkt" drdr:command-line (racket * "2")
 "collects/tests/racket/benchmarks/shootout/typed/nestedloop.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/nsieve-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "2")
-"collects/tests/racket/benchmarks/shootout/typed/nsieve-optimizing.rkt" drdr:command-line (racket "-t" * "--" "2")
+"collects/tests/racket/benchmarks/shootout/typed/nsieve-non-optimizing.rkt" drdr:command-line (racket * "2")
+"collects/tests/racket/benchmarks/shootout/typed/nsieve-optimizing.rkt" drdr:command-line (racket * "2")
 "collects/tests/racket/benchmarks/shootout/typed/nsieve.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/nsievebits-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "2")
-"collects/tests/racket/benchmarks/shootout/typed/nsievebits-optimizing.rkt" drdr:command-line (racket "-t" * "--" "2")
+"collects/tests/racket/benchmarks/shootout/typed/nsievebits-non-optimizing.rkt" drdr:command-line (racket * "2")
+"collects/tests/racket/benchmarks/shootout/typed/nsievebits-optimizing.rkt" drdr:command-line (racket * "2")
 "collects/tests/racket/benchmarks/shootout/typed/nsievebits.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/partialsums-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "25")
-"collects/tests/racket/benchmarks/shootout/typed/partialsums-optimizing.rkt" drdr:command-line (racket "-t" * "--" "25")
+"collects/tests/racket/benchmarks/shootout/typed/partialsums-non-optimizing.rkt" drdr:command-line (racket * "25")
+"collects/tests/racket/benchmarks/shootout/typed/partialsums-optimizing.rkt" drdr:command-line (racket * "25")
 "collects/tests/racket/benchmarks/shootout/typed/partialsums.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/pidigits-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "25")
-"collects/tests/racket/benchmarks/shootout/typed/pidigits-optimizing.rkt" drdr:command-line (racket "-t" * "--" "25")
+"collects/tests/racket/benchmarks/shootout/typed/pidigits-non-optimizing.rkt" drdr:command-line (racket * "25")
+"collects/tests/racket/benchmarks/shootout/typed/pidigits-optimizing.rkt" drdr:command-line (racket * "25")
 "collects/tests/racket/benchmarks/shootout/typed/pidigits.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/shootout/typed/pidigits1.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/random-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "25")
-"collects/tests/racket/benchmarks/shootout/typed/random-optimizing.rkt" drdr:command-line (racket "-t" * "--" "25")
+"collects/tests/racket/benchmarks/shootout/typed/random-non-optimizing.rkt" drdr:command-line (racket * "25")
+"collects/tests/racket/benchmarks/shootout/typed/random-optimizing.rkt" drdr:command-line (racket * "25")
 "collects/tests/racket/benchmarks/shootout/typed/random.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/recursive-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "2")
-"collects/tests/racket/benchmarks/shootout/typed/recursive-optimizing.rkt" drdr:command-line (racket "-t" * "--" "2")
+"collects/tests/racket/benchmarks/shootout/typed/recursive-non-optimizing.rkt" drdr:command-line (racket * "2")
+"collects/tests/racket/benchmarks/shootout/typed/recursive-optimizing.rkt" drdr:command-line (racket * "2")
 "collects/tests/racket/benchmarks/shootout/typed/recursive.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/shootout/typed/regexmatch.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/shootout/typed/regexpdna.rktl" drdr:command-line #f
@@ -1766,21 +1303,21 @@ path/s is either such a string or a list of them.
 "collects/tests/racket/benchmarks/shootout/typed/reversecomplement.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/shootout/typed/reversefile.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/shootout/typed/sieve.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/spectralnorm-generic-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "25")
-"collects/tests/racket/benchmarks/shootout/typed/spectralnorm-generic-optimizing.rkt" drdr:command-line (racket "-t" * "--" "25")
+"collects/tests/racket/benchmarks/shootout/typed/spectralnorm-generic-non-optimizing.rkt" drdr:command-line (racket * "25")
+"collects/tests/racket/benchmarks/shootout/typed/spectralnorm-generic-optimizing.rkt" drdr:command-line (racket * "25")
 "collects/tests/racket/benchmarks/shootout/typed/spectralnorm-generic.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/spectralnorm-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "25")
-"collects/tests/racket/benchmarks/shootout/typed/spectralnorm-optimizing.rkt" drdr:command-line (racket "-t" * "--" "25")
+"collects/tests/racket/benchmarks/shootout/typed/spectralnorm-non-optimizing.rkt" drdr:command-line (racket * "25")
+"collects/tests/racket/benchmarks/shootout/typed/spectralnorm-optimizing.rkt" drdr:command-line (racket * "25")
 "collects/tests/racket/benchmarks/shootout/typed/spectralnorm.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/shootout/typed/spellcheck-non-optimizing.rkt" drdr:command-line (mzc *)
 "collects/tests/racket/benchmarks/shootout/typed/spellcheck-optimizing.rkt" drdr:command-line (mzc *)
 "collects/tests/racket/benchmarks/shootout/typed/spellcheck.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/strcat-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "25")
-"collects/tests/racket/benchmarks/shootout/typed/strcat-optimizing.rkt" drdr:command-line (racket "-t" * "--" "25")
+"collects/tests/racket/benchmarks/shootout/typed/strcat-non-optimizing.rkt" drdr:command-line (racket * "25")
+"collects/tests/racket/benchmarks/shootout/typed/strcat-optimizing.rkt" drdr:command-line (racket * "25")
 "collects/tests/racket/benchmarks/shootout/typed/strcat.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/shootout/typed/sumcol.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/thread-ring-non-optimizing.rkt" drdr:command-line (racket "-t" * "--" "25")
-"collects/tests/racket/benchmarks/shootout/typed/thread-ring-optimizing.rkt" drdr:command-line (racket "-t" * "--" "25")
+"collects/tests/racket/benchmarks/shootout/typed/thread-ring-non-optimizing.rkt" drdr:command-line (racket * "25")
+"collects/tests/racket/benchmarks/shootout/typed/thread-ring-optimizing.rkt" drdr:command-line (racket * "25")
 "collects/tests/racket/benchmarks/shootout/typed/thread-ring.rktl" drdr:command-line #f
 "collects/tests/racket/benchmarks/shootout/typed/wc-non-optimizing.rkt" drdr:command-line #f
 "collects/tests/racket/benchmarks/shootout/typed/wc-optimizing.rkt" drdr:command-line #f
@@ -1788,89 +1325,38 @@ path/s is either such a string or a list of them.
 "collects/tests/racket/benchmarks/shootout/typed/wordfreq-non-optimizing.rkt" drdr:command-line #f
 "collects/tests/racket/benchmarks/shootout/typed/wordfreq-optimizing.rkt" drdr:command-line #f
 "collects/tests/racket/benchmarks/shootout/typed/wordfreq.rktl" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/wrap-typed-non-optimizing.rkt" drdr:command-line #f
-"collects/tests/racket/benchmarks/shootout/typed/wrap-typed-optimizing.rkt" drdr:command-line #f
 "collects/tests/racket/binc.rktl" drdr:command-line #f
-"collects/tests/racket/boundmap-test.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/cache-image-snip-test.rktl" drdr:command-line (gracket "-f" *)
-"collects/tests/racket/censor.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/chaperone.rktl" drdr:command-line #f
-"collects/tests/racket/char-set.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/chez-module.rktl" drdr:command-line #f
-"collects/tests/racket/cm.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/cmdline.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/compat.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/compile.rktl" drdr:command-line #f
 "collects/tests/racket/contmark.rktl" drdr:command-line #f
-"collects/tests/racket/contract-mzlib-test.rktl" responsible (robby) drdr:command-line (racket "-qr" *)
-"collects/tests/racket/contract-opt-tests.rkt" responsible (robby) drdr:command-line (racket "-qr" *)
-"collects/tests/racket/contract-stress-argmin.rkt" responsible (robby) drdr:command-line (racket "-qr" *)
-"collects/tests/racket/contract-stress-take-right.rkt" responsible (robby) drdr:command-line (racket "-qr" *)
-"collects/tests/racket/contract-test.rktl" responsible (robby) drdr:command-line (racket "-qr" *)
-"collects/tests/racket/control.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/date.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/deep.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/dict.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/embed-in-c.rktl" drdr:command-line (racket "-f" *)
+"collects/tests/racket/contract-mzlib-test.rktl" responsible (robby) drdr:command-line (racket "-r" *)
+"collects/tests/racket/contract-opt-tests.rkt" responsible (robby) drdr:command-line (racket "-r" *)
+"collects/tests/racket/contract-stress-argmin.rkt" responsible (robby) drdr:command-line (racket "-r" *)
+"collects/tests/racket/contract-stress-take-right.rkt" responsible (robby) drdr:command-line (racket "-r" *)
+"collects/tests/racket/contract-test.rktl" responsible (robby) drdr:command-line (racket "-r" *)
 "collects/tests/racket/embed-me4.rktl" drdr:command-line #f
-"collects/tests/racket/embed-me5.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/tests/racket/embed-me9.rkt" drdr:command-line #f
 "collects/tests/racket/embed-planet-1/alt.rkt" drdr:command-line #f
 "collects/tests/racket/embed-planet-1/main.rkt" drdr:command-line #f
 "collects/tests/racket/embed-planet-1/other.rkt" drdr:command-line #f
-"collects/tests/racket/embed-planet-2/main.ss" drdr:command-line #f
-"collects/tests/racket/embed-planet-2/private/sub.rkt" drdr:command-line #f
+"collects/tests/racket/embed-planet-2" drdr:command-line #f
 "collects/tests/racket/embed.rktl" drdr:command-line #f
-"collects/tests/racket/etc.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/expand.rktl" drdr:command-line #f
-"collects/tests/racket/fact.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/file.rktl" drdr:command-line #f
 "collects/tests/racket/filelib.rktl" drdr:command-line #f drdr:timeout 360
-"collects/tests/racket/fixnum.rktl" drdr:command-line (racket "-f" *) drdr:timeout 360
-"collects/tests/racket/for.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/foreign-test.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/function.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/head.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/id-table-test.rktl" drdr:command-line (racket "-f" *)
+"collects/tests/racket/fixnum.rktl" drdr:timeout 360
 "collects/tests/racket/imap.rktl" drdr:command-line #f
-"collects/tests/racket/ktest.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/kw.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/list.rktl" drdr:command-line #f
-"collects/tests/racket/loadable.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/loadtest.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/logger.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/loop.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/ltest.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/macro.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/macrolib.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/makeflat.rktl" drdr:command-line #f
-"collects/tests/racket/makeflats.rktl" drdr:command-line #f
-"collects/tests/racket/math.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/moddep.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/modprot.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/module-reader.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/module.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/mpair.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/mz-tests.rktl" drdr:command-line #f
 "collects/tests/racket/mzlib-tests.rktl" drdr:command-line #f
-"collects/tests/racket/mzq.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/name.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/namespac.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/nch.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/net.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/number.rktl" drdr:command-line #f
-"collects/tests/racket/numstrs.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/object-old.rktl" drdr:command-line #f
 "collects/tests/racket/object.rktl" drdr:command-line #f
-"collects/tests/racket/oe.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/optimize.rktl" drdr:command-line #f
-"collects/tests/racket/pack.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/package-gen.rktl" drdr:command-line (racket "-f" *) drdr:timeout 600
-"collects/tests/racket/package.rktl" drdr:command-line (racket "-f" *)
+"collects/tests/racket/package-gen.rktl" drdr:timeout 600
 "collects/tests/racket/parallel.rktl" drdr:command-line #f
-"collects/tests/racket/param.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/path.rktl" drdr:command-line #f
-"collects/tests/racket/pathlib.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/pconvert.rktl" drdr:command-line #f
 "collects/tests/racket/place" responsible (tewk)
 "collects/tests/racket/place-chan-rand-help.rkt" responsible (tewk)
@@ -1880,84 +1366,50 @@ path/s is either such a string or a list of them.
 "collects/tests/racket/place-channel-ffi.rkt" responsible (tewk)
 "collects/tests/racket/place-channel-socket.rkt" responsible (tewk)
 "collects/tests/racket/place-channel.rkt" responsible (tewk) drdr:timeout 300
-"collects/tests/racket/place.rktl" responsible (tewk) drdr:command-line (racket "-f" *)
-"collects/tests/racket/places.rkt" responsible (tewk) drdr:command-line (racket *)
+"collects/tests/racket/place.rktl" responsible (tewk)
+"collects/tests/racket/places.rkt" responsible (tewk)
 "collects/tests/racket/port.rktl" drdr:command-line #f
 "collects/tests/racket/portlib.rktl" drdr:command-line #f
-"collects/tests/racket/pretty.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/procs.rktl" drdr:command-line #f
 "collects/tests/racket/prompt-tests.rktl" drdr:command-line #f
 "collects/tests/racket/prompt.rktl" drdr:command-line #f
-"collects/tests/racket/quiet.rktl" drdr:command-line (racket "-f" *) drdr:timeout 360
+"collects/tests/racket/quiet.rktl" drdr:timeout 360
 "collects/tests/racket/read.rktl" drdr:command-line #f
-"collects/tests/racket/readtable.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/restart.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/runflats.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/rx.rktl" drdr:command-line #f
-"collects/tests/racket/sandbox.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/scheme-tests.rktl" drdr:command-line #f
-"collects/tests/racket/serialize.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/set.rktl" drdr:command-line #f
 "collects/tests/racket/shared-tests.rktl" drdr:command-line #f
-"collects/tests/racket/shared.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/slice.rkt" responsible (jay)
-"collects/tests/racket/srfi.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/stream.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/stress" responsible (jay)
 "collects/tests/racket/stress/contract-lifting.rkt" responsible (robby sstrickl)
 "collects/tests/racket/stress/dict.rkt" drdr:timeout 180
-"collects/tests/racket/stress/fuzz.rkt" responsible (samth mflatt) drdr:command-line (racket "-t" * "--" "-c") drdr:timeout 300 drdr:random #t
+"collects/tests/racket/stress/fuzz.rkt" responsible (samth mflatt) drdr:command-line (racket * "-c") drdr:timeout 300 drdr:random #t
 "collects/tests/racket/stress/module-stack.rkt" drdr:timeout 180
-"collects/tests/racket/string-mzlib.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/string.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/struct.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/structlib.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/stx.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/subprocess.rktl" drdr:command-line (racket "-f" *) drdr:random #t
+"collects/tests/racket/subprocess.rktl" drdr:random #t
 "collects/tests/racket/sync.rktl" drdr:command-line #f
-"collects/tests/racket/syntax-tests.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/syntax.rktl" drdr:command-line #f
-"collects/tests/racket/tcp.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/testing.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/thread.rktl" drdr:command-line #f
-"collects/tests/racket/threadlib.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/thrport.rktl" drdr:command-line #f
 "collects/tests/racket/trace.rktl" drdr:command-line #f
-"collects/tests/racket/trait.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/ttt/listlib.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/ttt/tic-bang.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/ttt/tic-func.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/ttt/ttt.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/ttt/uinc4.rktl" drdr:command-line #f
-"collects/tests/racket/ttt/veclib.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/udp.rktl" drdr:command-line #f
-"collects/tests/racket/uinc.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/uinc2.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/uinc3.rktl" drdr:command-line #f
 "collects/tests/racket/uni-norm.rktl" drdr:command-line #f
 "collects/tests/racket/unicode.rktl" drdr:command-line #f
-"collects/tests/racket/unit.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/unitsig.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/unsafe.rktl" drdr:command-line #f
 "collects/tests/racket/vector.rktl" drdr:command-line #f
-"collects/tests/racket/version.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/racket/will.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/racket/zo-marshal.rktl" drdr:command-line #f
 "collects/tests/racket/ztest.rktl" drdr:command-line #f
 "collects/tests/racklog" responsible (jay)
 "collects/tests/rackunit" responsible (jay noel)
 "collects/tests/rackunit/standalone-check-test.rkt" drdr:command-line #f
 "collects/tests/rackunit/standalone-test-case-test.rkt" drdr:command-line #f
-"collects/tests/rackunit/standalone.rkt" drdr:command-line (racket "-qjt" *)
+"collects/tests/rackunit/standalone.rkt" drdr:command-line (racket "-jt" *)
 "collects/tests/run-automated-tests.rkt" responsible (eli) drdr:command-line (mzc "-k" *) drdr:timeout 600
 "collects/tests/scribble" responsible (eli mflatt)
 "collects/tests/scribble/main.rkt" drdr:command-line #f
+"collects/tests/scriblib" responsible (mflatt)
 "collects/tests/slatex" responsible (jay sstrickl)
 "collects/tests/srfi" responsible (noel chongkai jay)
-"collects/tests/srfi/1/run-tests.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/srfi/40/run-tests.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/srfi/43/run-tests.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/srfi/load-srfis.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/stepper" responsible (clements)
 "collects/tests/stepper/already-defined.rktl" drdr:command-line #f
 "collects/tests/stepper/automatic-tests.rkt" drdr:timeout 600
@@ -1991,17 +1443,13 @@ path/s is either such a string or a list of them.
 "collects/tests/stepper/two-tests.rktl" drdr:command-line #f
 "collects/tests/stepper/unannotated.rktl" drdr:command-line #f
 "collects/tests/stepper/undefined.rktl" drdr:command-line #f
-"collects/tests/stepper/universe-test.rkt" drdr:command-line (mzc *)
 "collects/tests/stepper/world-test.rktl" drdr:command-line #f
 "collects/tests/stepper/write-display.rktl" drdr:command-line #f
 "collects/tests/stress.rkt" responsible (jay)
 "collects/tests/stxparse" responsible (ryanc)
 "collects/tests/stxparse/stress-template.rkt" drdr:command-line #f
-"collects/tests/stxparse/stxclass.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/tests/syntax" responsible (stamourv mflatt)
 "collects/tests/syntax-color" responsible (mflatt)
-"collects/tests/syntax-color/paren-tree.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/syntax-color/token-tree.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/test-engine" responsible (kathyg)
 "collects/tests/typed-racket" responsible (samth stamourv)
 "collects/tests/typed-racket/fail" drdr:command-line #f
@@ -2010,23 +1458,19 @@ path/s is either such a string or a list of them.
 "collects/tests/typed-racket/optimizer" responsible (stamourv)
 "collects/tests/typed-racket/optimizer/run.rkt" drdr:timeout 1200
 "collects/tests/typed-racket/optimizer/transform.rkt" drdr:command-line #f
-"collects/tests/typed-racket/run.rkt" drdr:command-line (racket "-t" * "--" "--nightly") drdr:timeout 1800
+"collects/tests/typed-racket/run.rkt" drdr:command-line (racket * "--nightly") drdr:timeout 1800
+"collects/tests/typed-racket/succeed/submodules.rkt" drdr:command-line (racket * "1")
 "collects/tests/typed-racket/xfail" drdr:command-line #f
 "collects/tests/units" responsible (sstrickl)
-"collects/tests/units/multi-mod-sigs.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/units/test-cert.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/units/test-exptime.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/units/test-runtime.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/units/test-unit-contracts.rktl" drdr:command-line (racket "-f" *)
-"collects/tests/units/test-unit.rktl" drdr:command-line (racket "-f" *)
 "collects/tests/unstable" responsible (jay samth cce ryanc)
 "collects/tests/unstable/automata" responsible (jay)
-"collects/tests/unstable/byte-counting-port.rkt" responsible (jay)
 "collects/tests/unstable/list.rkt" responsible (jay)
 "collects/tests/unstable/logging.rkt" responsible (stamourv)
-"collects/tests/unstable/srcloc.rktl" responsible (cce) drdr:command-line (racket "-f" *)
+"collects/tests/unstable/srcloc.rktl" responsible (cce)
 "collects/tests/unstable/temp-c" responsible (jay)
-"collects/tests/utils/gui.rkt" drdr:command-line (gracket-text "-t" *)
+"collects/tests/utils/gui.rkt" responsible (robby)
+"collects/tests/utils/mz-testing.rkt" responsible (clements)
+"collects/tests/utils/sexp-diff.rkt" responsible (clements)
 "collects/tests/web-server" responsible (jay)
 "collects/tests/web-server/pr/length.rkt" drdr:command-line #f
 "collects/tests/web-server/pr/methods.rkt" drdr:command-line #f
@@ -2038,65 +1482,35 @@ path/s is either such a string or a list of them.
 "collects/tests/web-server/template/examples/blog.rkt" drdr:command-line (mzc *)
 "collects/tests/xml" responsible (jay)
 "collects/tests/xml/test-clark.rkt" drdr:command-line #f drdr:timeout 300
-"collects/tests/xml/xml-snip-bug.rkt" drdr:command-line (gracket "-t" *)
 "collects/tests/xrepl" responsible (eli)
+"collects/tests/xrepl/main.rkt" drdr:command-line #f
 "collects/tests/zo-path.rkt" responsible (mflatt)
 "collects/tests/zo-size.rkt" responsible (jay)
 "collects/tex2page" responsible (jay)
 "collects/texpict" responsible (mflatt robby)
-"collects/texpict/balloon.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/texpict/code.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/texpict/face-demo.rkt" drdr:command-line (mzc *)
-"collects/texpict/face.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/texpict/flash.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/texpict/mrpict-unit.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/texpict/mrpict.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/texpict/pict-value-snip.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/texpict/private/common-unit.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/texpict/slideshow-run.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/texpict/slideshow.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/texpict/symbol.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/texpict/texpict-unit.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/texpict/texpict.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/texpict/utils.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/trace" responsible (mflatt robby)
 "collects/typed" responsible (samth)
-"collects/typed/framework/framework.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/typed/framework/prefs-contract.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/typed/mred/mred.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/typed/rackunit" responsible (jay)
-"collects/typed/rackunit/gui.rkt" drdr:command-line (gracket "-t" *)
 "collects/typed-racket" responsible (samth stamourv)
 "collects/typed-racket/base-env/base-special-env.rkt" drdr:command-line (raco "make" *)
 "collects/typed-racket/optimizer" responsible (stamourv)
 "collects/typed-scheme" responsible (samth stamourv)
 "collects/unstable" responsible (jay samth cce ryanc)
 "collects/unstable/automata" responsible (jay)
-"collects/unstable/byte-counting-port.rkt" responsible (jay)
 "collects/unstable/debug.rkt" responsible (samth)
-"collects/unstable/gui/language-level.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/unstable/gui/notify.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/unstable/gui/prefs.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/unstable/gui/slideshow.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/unstable/gui/window.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/unstable/hash.rkt" responsible (samth)
 "collects/unstable/logging.rkt" responsible (stamourv)
 "collects/unstable/match.rkt" responsible (samth)
-"collects/unstable/mutated-vars.rkt" responsible (samth)
-"collects/unstable/poly-c.rkt" responsible (samth)
-"collects/unstable/scribblings/byte-counting-port.scrbl" responsible (jay)
 "collects/unstable/scribblings/debug.scrbl" responsible (samth)
 "collects/unstable/scribblings/hash.scrbl" responsible (samth)
 "collects/unstable/scribblings/logging.scrbl" responsible (stamourv)
 "collects/unstable/scribblings/match.scrbl" responsible (samth)
-"collects/unstable/scribblings/mutated-vars.scrbl" responsible (samth)
-"collects/unstable/scribblings/poly-c.scrbl" responsible (samth)
 "collects/unstable/scribblings/sequence.scrbl" responsible (samth)
 "collects/unstable/scribblings/utils.rkt" responsible (samth)
 "collects/unstable/sequence.rkt" responsible (samth)
 "collects/unstable/temp-c" responsible (jay)
 "collects/version" responsible (eli)
-"collects/version/tool.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/web-server" responsible (jay)
 "collects/web-server/default-web-root/configuration-table.rkt" drdr:command-line #f
 "collects/web-server/default-web-root/htdocs/servlets/examples/add-dispatch.rkt" drdr:command-line (mzc *)
@@ -2106,7 +1520,6 @@ path/s is either such a string or a list of them.
 "collects/web-server/default-web-root/htdocs/servlets/examples/cookie2.rkt" drdr:command-line (mzc *)
 "collects/web-server/default-web-root/htdocs/servlets/examples/digest.rkt" drdr:command-line (mzc *)
 "collects/web-server/default-web-root/htdocs/servlets/examples/english-measure-questions.rkt" drdr:command-line #f
-"collects/web-server/default-web-root/htdocs/servlets/examples/response.rkt" drdr:command-line (racket "-f" *)
 "collects/web-server/main.rkt" drdr:command-line #f
 "collects/web-server/scribblings/tutorial/examples/dummy-10.rkt" drdr:command-line #f
 "collects/web-server/scribblings/tutorial/examples/dummy-3.rkt" drdr:command-line #f
@@ -2130,10 +1543,6 @@ path/s is either such a string or a list of them.
 "collects/wxme" responsible (mflatt)
 "collects/wxme/xml.rkt" responsible (jay)
 "collects/xml" responsible (jay)
-"collects/xml/scheme-snipclass.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/xml/text-box-tool.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/xml/text-snipclass.rkt" drdr:command-line (gracket-text "-t" *)
-"collects/xml/xml-snipclass.rkt" drdr:command-line (gracket-text "-t" *)
 "collects/xrepl" responsible (eli)
 "doc/release-notes/COPYING-libscheme.txt" responsible (mflatt)
 "doc/release-notes/COPYING.txt" responsible (mflatt)
@@ -2144,14 +1553,17 @@ path/s is either such a string or a list of them.
 "doc/release-notes/redex" responsible (clklein robby)
 "doc/release-notes/stepper" responsible (clements)
 "doc/release-notes/teachpack" responsible (matthias)
+"doc/release-notes/typed-racket" responsible (samth stamourv)
 "man/man1/drracket.1" responsible (robby)
-"man/man1/drscheme.1" responsible (robby)
 "man/man1/gracket.1" responsible (mflatt)
 "man/man1/mred.1" responsible (mflatt)
+"man/man1/mzc.1" responsible (mflatt)
 "man/man1/mzscheme.1" responsible (mflatt)
 "man/man1/plt-help.1" responsible (robby)
 "man/man1/racket.1" responsible (mflatt)
 "man/man1/raco.1" responsible (mflatt)
+"man/man1/setup-plt.1" responsible (mflatt)
+"man/man1/tex2page.1" responsible (jay)
 "src" responsible (mflatt)
 "src/foreign" responsible (eli)
 

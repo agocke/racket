@@ -54,16 +54,17 @@
 (define (contract-random-generate maybe-ctc fuel)
   (define ctc (coerce-contract 'contract-random-generate maybe-ctc))
   (add-trace (contract-struct-name ctc) 'contract-random-generate)
-  ; choose randomly until one method succeeds or all fail
-  (let trygen ([options (permute (list generate/direct
-                                       generate/direct-env
-                                       generate/indirect-env))])
-    (if (null? options)
-        (generate-ctc-fail ctc)
-        (let ([val ((car options) ctc fuel)])
-          (if (generate-ctc-fail? val)
-              (trygen (cdr options))
-              val)))))
+  (parameterize ([generate-env (or (generate-env) (make-hash))])
+    ; choose randomly until one method succeeds or all fail
+    (let trygen ([options (permute (list generate/direct
+                                         generate/direct-env
+                                         generate/indirect-env))])
+      (if (null? options)
+          (generate-ctc-fail ctc)
+          (let ([val ((car options) ctc fuel)])
+            (if (generate-ctc-fail? val)
+                (trygen (cdr options))
+                val))))))
 
 ; generate/direct :: contract int -> value for contract
 ; Attempts to make a generator that generates values for this contract
@@ -71,11 +72,12 @@
 (define (generate/direct maybe-ctc fuel)
   (define ctc (coerce-contract 'generate/direct maybe-ctc))
   (add-trace (contract-struct-name ctc) 'generate/direct)
-  (let ([g (contract-struct-generate ctc)])
-    ; Check if the contract has a direct generate attached
-    (if (generate-ctc-fail? g)
-        g 
-        (g fuel))))
+  (parameterize ([generate-env (or (generate-env) (make-hash))])
+    (let ([g (contract-struct-generate ctc)])
+      ; Check if the contract has a direct generate attached
+      (if (generate-ctc-fail? g)
+          g 
+          (g fuel)))))
 
 ; generate/direct-env :: contract int -> value
 ; Attemps to find a value with the given contract in the environment.
@@ -83,11 +85,12 @@
 (define (generate/direct-env maybe-ctc fuel)
   (define ctc (coerce-contract 'generate-direct/env maybe-ctc))
   (add-trace (contract-struct-name ctc) 'generate-direct/env)
-  (let ([val (find-val (λ (c vs) (contract-stronger? c ctc))
-                        (generate-env))])
-    (if (void? val)
-        (generate-ctc-fail ctc)
-        (cdr val))))
+  (parameterize ([generate-env (or (generate-env) (make-hash))])
+    (let ([val (find-val (λ (c vs) (contract-stronger? c ctc))
+                          (generate-env))])
+      (if (void? val)
+          (generate-ctc-fail ctc)
+          (cdr val)))))
 
 ;; generate/indirect-env :: contract int -> (int -> value for contract)
 ;; Attempts to make a generator that generates values for this contract
@@ -96,20 +99,25 @@
 (define (generate/indirect-env maybe-ctc fuel)
   (define ctc (coerce-contract 'generate/indirect-env maybe-ctc))
   (add-trace (contract-struct-name ctc) 'generate/indirect-env)
-  (if (> fuel 0)
-      (let* ([vals (permute-sequence (filter-vals (valid-gen ctc)
-                                                  (generate-env)))]
-             [val (for/or ([rand-ctc+fun vals])
-                    (let ([gen (grab-generated-val ctc 
-                                                   rand-ctc+fun 
-                                                   fuel)])
-                      (if (not (generate-ctc-fail? gen))
-                          (list gen)
-                          #f)))])
+  (define (get-permuted-vals ctc)
+    (permute-sequence (filter-vals (valid-gen ctc)
+                                   (generate-env))))
+  (define (get-a-val ctc options)
+    (for/or ([rand-ctc+fun options])
+      (let ([gen (grab-generated-val ctc 
+                                     rand-ctc+fun 
+                                     fuel)])
+        (if (not (generate-ctc-fail? gen))
+            (list gen)
+            #f))))
+  (parameterize ([generate-env (or (generate-env) (make-hash))])
+    (if (> fuel 0)
+        (let* ([vals (get-permuted-vals ctc)]
+               [val (get-a-val ctc vals)])
           (if (not val)
               (generate-ctc-fail ctc)
               (car val)))
-      (generate-ctc-fail ctc)))
+        (generate-ctc-fail ctc))))
 
 ;; Helper function for getting random matching values from the environment.
 ;; "Matching" is defined as returning true in the predicate f, which has the

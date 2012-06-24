@@ -44,7 +44,9 @@ the impersonator:
             @t{application of a procedure}
             unbox set-box!
             vector-ref vector-set!
-            hash-ref hash-set hash-set! hash-remove hash-remove!]
+            hash-ref hash-set hash-set! hash-remove hash-remove!
+            call-with-continuation-prompt
+            abort-current-continuation]
 
 Derived operations, such as printing a value, can be redirected
 through impersonators due to their use of accessor functions. The
@@ -244,22 +246,21 @@ or override impersonator-property values of @racket[vec].}
                           [prop-val any] ... ...)
           (and/c box? impersonator?)]{
 
-Returns an impersonator of @racket[bx], which redirects the
+Returns an impersonator of @racket[box], which redirects the
 @racket[unbox] and @racket[set-box!] operations.
 
-The @racket[unbox-proc] must accept @racket[bx] and the value that
-@racket[unbox] on @racket[bx] produces index; it must produce a replacement
-value, which is the result of
-@racket[unbox] on the impersonator.
+The @racket[unbox-proc] must accept @racket[box] and the value that
+@racket[unbox] produces on @racket[box]; it must produce a replacement
+value, which is the result of @racket[unbox] on the impersonator.
 
-The @racket[set-proc] must accept @racket[bx] and the value passed to
+The @racket[set-proc] must accept @racket[box] and the value passed to
 @racket[set-box!]; it must produce a replacement
 value, which is used with @racket[set-box!] on the original
-@racket[bx] to install the value.
+@racket[box] to install the value.
 
 Pairs of @racket[prop] and @racket[prop-val] (the number of arguments
 to @racket[impersonate-box] must be odd) add impersonator properties
-or override impersonator-property values of @racket[bx].}
+or override impersonator-property values of @racket[box].}
 
 
 @defproc[(impersonate-hash [hash (and/c hash? (not/c immutable?))]
@@ -322,6 +323,45 @@ produced by @racket[key-proc] does not yield a value through
 Pairs of @racket[prop] and @racket[prop-val] (the number of arguments
 to @racket[impersonate-hash] must be odd) add impersonator properties
 or override impersonator-property values of @racket[hash].}
+
+
+@defproc[(impersonate-prompt-tag [prompt-tag continuation-prompt-tag?]
+                                 [handle-proc procedure?]
+                                 [abort-proc procedure?]
+                                 [prop impersonator-property?]
+                                 [prop-val any] ... ...)
+          (and/c continuation-prompt-tag? impersonator?)]{
+
+Returns an impersonator of @racket[prompt-tag], which redirects
+the @racket[call-with-continuation-prompt] and
+@racket[abort-current-continuation] operations.
+
+The @racket[handle-proc] must accept the values that the handler
+of a continuation prompt would take and it must produce replacement
+values, which will be passed to the handler.
+
+The @racket[abort-proc] must accept the values passed to
+@racket[abort-current-continuation]; it must produce replacement
+values, which are aborted to the appropriate prompt.
+
+Pairs of @racket[prop] and @racket[prop-val] (the number of arguments
+to @racket[impersonate-prompt-tag] must be odd) add impersonator properties
+or override impersonator-property values of @racket[prompt-tag].
+
+@examples[
+  (define tag
+    (impersonate-prompt-tag
+     (make-continuation-prompt-tag)
+     (lambda (n) (* n 2))
+     (lambda (n) (+ n 1))))
+
+  (call-with-continuation-prompt
+    (lambda ()
+      (abort-current-continuation tag 5))
+    tag
+    (lambda (n) n))
+]
+}
 
 
 @defthing[prop:impersonator-of struct-type-property?]{
@@ -427,7 +467,7 @@ of the original value, and @racket[set-proc] must produce the value
 that is given or a chaperone of the value. The @racket[set-proc] will
 not be used if @racket[vec] is immutable.}
 
-@defproc[(chaperone-box [bx box?]
+@defproc[(chaperone-box [box box?]
                         [unbox-proc (box? any/c . -> . any/c)]
                         [set-proc (box? any/c . -> . any/c)]
                         [prop impersonator-property?]
@@ -438,7 +478,7 @@ Like @racket[impersonate-box], but with support for immutable boxes. The
 @racket[unbox-proc] procedure must produce the same value or a
 chaperone of the original value, and @racket[set-proc] must produce
 the same value or a chaperone of the value that it is given.  The
-@racket[set-proc] will not be used if @racket[bx] is immutable.}
+@racket[set-proc] will not be used if @racket[box] is immutable.}
 
 
 @defproc[(chaperone-hash [hash hash?]
@@ -519,6 +559,45 @@ and it must return a chaperone of that value.
 Pairs of @racket[prop] and @racket[prop-val] (the number of arguments
 to @racket[chaperone-evt] must be even) add impersonator properties
 or override impersonator-property values of @racket[evt].}
+
+@defproc[(chaperone-prompt-tag [prompt-tag continuation-prompt-tag?]
+                               [handle-proc procedure?]
+                               [abort-proc procedure?]
+                               [prop impersonator-property?]
+                               [prop-val any] ... ...)
+          (and/c continuation-prompt-tag? chaperone?)]{
+
+Like @racket[impersonate-prompt-tag], but produces a chaperoned value.
+The @racket[handle-proc] procedure must produce the same values or
+chaperones of the original values, and @racket[abort-proc] must produce
+the same values or chaperones of the values that it is given.
+
+@examples[
+  (define bad-chaperone
+    (chaperone-prompt-tag
+     (make-continuation-prompt-tag)
+     (lambda (n) (* n 2))
+     (lambda (n) (+ n 1))))
+
+  (call-with-continuation-prompt
+    (lambda ()
+      (abort-current-continuation bad-chaperone 5))
+    bad-chaperone
+    (lambda (n) n))
+
+  (define good-chaperone
+    (chaperone-prompt-tag
+     (make-continuation-prompt-tag)
+     (lambda (n) (if (even? n) n (error "not even")))
+     (lambda (n) (if (even? n) n (error "not even")))))
+
+  (call-with-continuation-prompt
+    (lambda ()
+      (abort-current-continuation good-chaperone 2))
+    good-chaperone
+    (lambda (n) n))
+]
+}
 
 @; ------------------------------------------------------------
 @section{Impersonator Properties}

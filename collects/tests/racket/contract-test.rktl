@@ -4046,6 +4046,128 @@
 
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;;
+  ;;  prompt/c
+  ;;
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+  (test/spec-passed
+   'prompt/c-fo-1
+   '(contract (prompt/c string?)
+              (make-continuation-prompt-tag)
+              'pos 'neg))
+
+  (test/pos-blame
+   'prompt/c-fo-2
+   '(contract (prompt/c string?) 5 'pos 'neg))
+
+  (test/spec-passed
+   'prompt/c-ho-1
+   '(let ([pt (contract (prompt/c number?)
+                        (make-continuation-prompt-tag)
+                        'pos
+                        'neg)])
+      (call-with-continuation-prompt
+        (λ () (abort-current-continuation pt 3))
+        pt
+        (λ (x) (+ x 1)))))
+
+  (test/neg-blame
+   'prompt/c-ho-2
+   '(let ([pt (contract (prompt/c string?)
+                        (make-continuation-prompt-tag)
+                        'pos
+                        'neg)])
+      (call-with-continuation-prompt
+        (λ () (abort-current-continuation pt 3))
+        pt
+        (λ (x) (+ x 1)))))
+
+  (test/neg-blame
+   'prompt/c-ho-3
+   '(let ([pt (contract (prompt/c (-> string? number?))
+                        (make-continuation-prompt-tag)
+                        'pos
+                        'neg)])
+      (call-with-continuation-prompt
+        (λ () (abort-current-continuation pt (λ (x) 5)))
+        pt
+        (λ (x) (x 8)))))
+
+  (test/neg-blame
+   'prompt/c-ho-4
+   '(let ([pt (contract (prompt/c (-> string? number?))
+                        (make-continuation-prompt-tag)
+                        'pos
+                        'neg)])
+      (call-with-continuation-prompt
+       (λ () (abort-current-continuation pt (λ (x) "bad")))
+       pt
+       (λ (x) (x "potato")))))
+
+  (test/pos-blame
+   'prompt/c-ho-5
+   '(let* ([pt (make-continuation-prompt-tag)]
+           [do-prompt (contract
+                        (-> (-> (prompt/c (-> number? number?))
+                                any)
+                                number?)
+                        (λ (f) (call-with-continuation-prompt
+                                (λ () (f pt))
+                                pt
+                                (λ (f) (f "bad"))))
+                        'pos
+                        'neg)])
+      (do-prompt (λ (pt)
+                  (abort-current-continuation pt (λ (v) (+ v 1)))))))
+
+  (test/spec-failed
+   'prompt/c-ho-5
+   '(let* ([pt (make-continuation-prompt-tag)]
+           [do-prompt (contract
+                        (-> (-> (prompt/c (-> number? number?))
+                                any)
+                                number?)
+                        (λ (f) (call-with-continuation-prompt
+                                (λ () (f pt))
+                                pt
+                                (λ (f) (f 0))))
+                        'A
+                        'B)]
+           [do-prompt2 (contract
+                         (-> (-> (prompt/c (-> string? number?))
+                                 any)
+                                 number?)
+                         do-prompt
+                         'B
+                         'C)])
+      (do-prompt2
+        (λ (pt) (abort-current-continuation pt (λ (v) (+ v 1))))))
+   "B")
+
+  (test/neg-blame
+   'prompt/c-ho-6
+   '(let ([pt (contract (prompt/c string? number?)
+                        (make-continuation-prompt-tag)
+                        'pos
+                        'neg)])
+      (call-with-continuation-prompt
+        (λ () (abort-current-continuation pt 3 "bad"))
+        pt
+        (λ (x y) (values x y)))))
+
+  (test/spec-passed
+   'prompt/c-ho-7
+   '(let ([pt (contract (prompt/c string? number?)
+                        (make-continuation-prompt-tag)
+                        'pos
+                        'neg)])
+      (call-with-continuation-prompt
+        (λ () (abort-current-continuation pt "good" 5))
+        pt
+        (λ (x y) (values x y)))))
+
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ;;
   ;;  make-contract
   ;;
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -6347,7 +6469,14 @@
             m
             1
             2))
-   "application: wrong number of arguments\n  procedure: m method\n  expected number of arguments: 1\n  given number of arguments: 2\n  arguments:\n   1\n   2")
+   (string-append
+    "m method: arity mismatch;\n"
+    " the expected number of arguments does not match the given number\n"
+    "  expected: 1\n"
+    "  given: 2\n"
+    "  arguments...:\n"
+    "   1\n"
+    "   2"))
 
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;;
@@ -12642,6 +12771,14 @@ so that propagation occurs.
                           'pos
                           'neg))))
   
+  (ctest '("the _ result of")
+         extract-context-lines
+         (λ () ((contract (->i ([x integer?]) [_ (x) (<=/c x)])
+                          add1
+                          'pos
+                          'neg)
+                1)))
+  
   (ctest '("the a argument of") 
          extract-context-lines 
          (λ () ((contract (->i ([a integer?] #:b [b integer?]) ([c integer?] #:d [d integer?]) any)
@@ -13874,6 +14011,33 @@ so that propagation occurs.
              (provide (contract-out garbage))
              (λ)))
    #rx"contract-out")
+
+  (test/pos-blame
+   'contract-struct/c-1
+   '(begin
+      (eval '(module contract-struct/c-1a racket/base
+               (struct s (field))
+               (provide s)))
+      (eval '(module contract-struct/c-1b racket/base
+               (require 'contract-struct/c-1a racket/contract)
+               (contract (struct/c s boolean?)
+                         (s 1)
+                         'pos 'neg)))
+      (eval '(require 'contract-struct/c-1b))))
+  
+  (test/spec-passed
+   'contract-struct/c-2
+   '(begin
+      (eval '(module contract-struct/c-2a racket/base
+               (struct s (field))
+               (provide s)))
+      (eval '(module contract-struct/c-2b racket/base
+               (require 'contract-struct/c-2a racket/contract)
+               (contract (struct/c s any/c)
+                         (s 1)
+                         'pos 'neg)))
+      (eval '(require 'contract-struct/c-2b))))
+
   
 ;                                                            
 ;                                                            

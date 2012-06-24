@@ -200,7 +200,7 @@ information on the form of the list is below.
 
 When an identifier in @racket[stop-ids] is encountered by the expander
 in a sub-expression, expansions stops for the sub-expression. If
-@racket[stop-ids] is a non-empty list, then
+@racket[stop-ids] is a non-empty list and does not contain just @racket[module*], then
 @racket[begin], @racket[quote], @racket[set!], @racket[lambda],
 @racket[case-lambda], @racket[let-values], @racket[letrec-values],
 @racket[if], @racket[begin0], @racket[with-continuation-mark],
@@ -217,6 +217,14 @@ proceed to sub-expressions). A fully expanded form can include the
 bindings listed in @secref["fully-expanded"] plus the
 @racket[letrec-syntaxes+values] form and @racket[#%expression]
 in any expression position.
+
+When @racket[#%plain-module-begin] is not itself in @racket[stop-ids]
+and @racket[module*] is in @racket[stop-ids], then the
+@racket[#%plain-module-begin] transformer refrains from expanding
+@racket[module*] sub-forms. Otherwise, the
+@racket[#%plain-module-begin] transformer detects and expands sub-forms
+(such as @racket[define-values]) independent of the correspond
+identifier's presence in @racket[stop-ids].
 
 The optional @racket[intdef-ctx] argument must be either @racket[#f],
 the result of @racket[syntax-local-make-definition-context], or a list

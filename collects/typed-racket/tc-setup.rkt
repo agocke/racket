@@ -58,8 +58,8 @@
                                                (cons (syntax-e id) ty)))))]
                      ;; reinitialize disappeared uses
                      [disappeared-use-todo      null]
-                     [disappeared-bindings-todo null])        
-        (define fully-expanded-stx (disarm* (local-expand stx expand-ctxt null)))
+                     [disappeared-bindings-todo null])
+        (define fully-expanded-stx (disarm* (local-expand stx expand-ctxt (list #'module*))))
         (when (show-input?)
           (pretty-print (syntax->datum fully-expanded-stx)))
         (do-time "Local Expand Done")

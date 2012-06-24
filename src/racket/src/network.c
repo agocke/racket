@@ -877,8 +877,7 @@ static void TCP_INIT(char *name)
 
   if (!started)
     scheme_raise_exn(MZEXN_FAIL_UNSUPPORTED,
-		     "%s: not supported on this machine\n"
-		     "  explanation: no winsock driver",
+		     "%s: no winsock driver",
 		     name);
   
 # ifdef MZ_USE_PLACES
@@ -1794,7 +1793,7 @@ const char *scheme_hostname_error(int err)
 
 static Scheme_Object *tcp_connect(int argc, Scheme_Object *argv[])
 {
-  char * volatile address = "", * volatile src_address, * volatile errmsg = "";
+  char * volatile address = "", * volatile src_address, * volatile errmsg = NULL;
   unsigned short origid, id, src_origid, src_id;
   int errpart = 0, errid = 0;
   volatile int nameerr = 0, no_local_spec;
@@ -1982,28 +1981,33 @@ static Scheme_Object *tcp_connect(int argc, Scheme_Object *argv[])
     } else {
       errpart = 2;
       nameerr = 1;
-      errmsg = "; local host not found";
+      errmsg = "local host not found";
     } 
     if (tcp_connect_dest)
       mz_freeaddrinfo(tcp_connect_dest);
   } else {
     errpart = 1;
     nameerr = 1;
-    errmsg = "; host not found";
+    errmsg = "host not found";
   }
 #endif
 
 #ifdef USE_TCP
   scheme_raise_exn(MZEXN_FAIL_NETWORK,
 		   "tcp-connect: connection failed\n"
+                   "%s%s%s"
                    "  address: %s\n"
                    "  port number: %d\n"
                    "  step: %d\n"
                    "  system error: %N",
-		   address, origid, errmsg, errpart, nameerr, errid);
+                   errmsg ? "  detail: " : "",
+                   errmsg ? errmsg : "",
+                   errmsg ? "\n" : "",
+		   address, origid, errpart, 
+                   nameerr, errid);
 #else
   scheme_raise_exn(MZEXN_FAIL_UNSUPPORTED,
-		   "tcp-connect: not supported on this platform");
+		   "tcp-connect: " NOT_SUPPORTED_STR);
 #endif
 
   return NULL;
@@ -2301,7 +2305,7 @@ tcp_listen(int argc, Scheme_Object *argv[])
 		   origid, errid);
 #else
   scheme_raise_exn(MZEXN_FAIL_UNSUPPORTED,
-		   "tcp-listen: not supported on this platform");
+		   "tcp-listen: " NOT_SUPPORTED_STR);
 #endif
 
   return NULL;
@@ -2756,9 +2760,9 @@ static Scheme_Object *tcp_accept_evt(int argc, Scheme_Object *argv[])
   return r;
 }
 
-static Scheme_Object *accept_failed(void *msg, int argc, Scheme_Object **argv)
+static Scheme_Object *accept_failed(void *_msg, int argc, Scheme_Object **argv)
 {
-  scheme_raise_exn(MZEXN_FAIL_NETWORK, msg ? (const char *)msg : "accept failed");
+  scheme_raise_exn(MZEXN_FAIL_NETWORK, (char *)_msg);
   return NULL;
 } 
 
@@ -2776,7 +2780,7 @@ static int tcp_check_accept_evt(Scheme_Object *ae, Scheme_Schedule_Info *sinfo)
     } else {
       /* error on accept */
       scheme_set_sync_target(sinfo, scheme_always_ready_evt, 
-                             scheme_make_closed_prim(accept_failed, fail_reason), 
+                             scheme_make_closed_prim(accept_failed, fail_reason),
                              NULL, 0, 0, NULL);
       return 1;
     }
@@ -3042,7 +3046,7 @@ static Scheme_Object *make_udp(int argc, Scheme_Object *argv[])
   return (Scheme_Object *)udp;
 #else
   scheme_raise_exn(MZEXN_FAIL_UNSUPPORTED,
-		   "udp-open-socket: not supported on this platform");
+		   "udp-open-socket: " NOT_SUPPORTED_STR);
   return NULL;
 #endif
 }

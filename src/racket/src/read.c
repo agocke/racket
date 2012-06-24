@@ -742,8 +742,8 @@ static Scheme_Object *good_syntax_width(int c, Scheme_Object **argv)
            || !SCHEME_INT_VAL(argv[0]))
 	: (SCHEME_BIGNUMP(argv[0])
 	   ? SCHEME_BIGPOS(argv[0])
-	   : (SCHEME_FLTP(argv[0])
-              ? MZ_IS_POS_INFINITY(SCHEME_FLT_VAL(argv[0]))
+	   : (SCHEME_DBLP(argv[0])
+              ? MZ_IS_POS_INFINITY(SCHEME_DBL_VAL(argv[0]))
               : 0)));
 
   return ok ? scheme_true : scheme_false;
@@ -3477,7 +3477,7 @@ read_number_or_symbol(int init_ch, int skip_rt, Scheme_Object *port,
     scheme_tell_all(port, &xl, &xc, &xp);
     scheme_read_err(port, stxsrc, xl, xc, xp,
 		    1, 0, indentation,
-		    "read: illegal use of \".\"");
+		    "read: illegal use of `.'");
     return NULL;
   }
 
@@ -5106,8 +5106,13 @@ static void read_module_directory(Scheme_Object *port, Scheme_Hash_Table *ht, in
                     "read (compiled): multi-module directory tree is imbalanced");
   
   len = read_simple_number_from_port(port);
+  if (len < 0) 
+    scheme_read_err(port, NULL, -1, -1, -1, -1, 0, NULL,
+                    "read (compiled): directory module name read failed");
+
   s = scheme_malloc_atomic(len + 1);
   got = scheme_get_bytes(port, len, s, 0);
+
   if (got != len)
     v = NULL;
   else {

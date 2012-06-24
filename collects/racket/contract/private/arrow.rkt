@@ -60,9 +60,6 @@ v4 todo:
          matches-arity-exactly?
          bad-number-of-results)
 
-; Provided for unit testing only
-;(provide test-fun)
-
 (define-syntax-parameter making-a-method #f)
 (define-syntax-parameter method-contract? #f)
 (define-for-syntax (make-this-parameters id)

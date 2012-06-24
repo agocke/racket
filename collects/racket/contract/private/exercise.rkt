@@ -1,6 +1,7 @@
 #lang racket/base
 
-(require "exercise-base.rkt"
+(require racket/list
+         "exercise-base.rkt"
          "exercise-main.rkt"
          "generate.rkt"
          "generate-base.rkt"
@@ -9,16 +10,16 @@
          "rand.rkt")
 
 (provide contract-exercise-modules
-         contract-exercise-funs
+         contract-exercise-vals
          contract-random-exercise
          exercise-fail
          exercise-gen-fail
          
          (struct-out single-exercise-trace))
 
-; contract-exercise-funs :: (list funcs) [(list func-names)] fuel -> .
+; contract-exercise-vals
 ;; The main worker function for exercising.
-(define (contract-exercise-funs valsXnames
+(define (contract-exercise-vals vals
                                 #:fuel [fuel 5]
                                 #:tests [num-tests 1]
                                 #:print-gen [print-gen #f]
@@ -51,9 +52,7 @@
 
   ; Current environment
   (define env 
-    (let ([vals (map car valsXnames)])
-      (bulk-env-add (map value-contract vals)
-                    vals)))
+    (bulk-env-add (map value-contract vals) vals))
 
   ; Save the incoming ports for restoration afterwards
   (define save-current-output #f)
@@ -108,36 +107,37 @@
   (parameterize ([generate-env env]
                  [exercise-output-port save-current-output])
     (current-error-port (exercise-output-port))
-    (for ([val (map car valsXnames)]
-          [val-name (map cdr valsXnames)]
+    (for ([val vals]
           #:when (has-contract? val))
-      (let* ([ctc (value-contract val)]
-             [ctc-name (contract-struct-name ctc)]
-             [handler (exercise-exn-handler val-name run-stats)])
-        (with-handlers ([exn:fail:contract:exercise:gen-fail?
-                          (handler '(genf))]
-                        [exn:fail:contract:exercise:ex-missing?
-                          (handler '(exm))]
-                        [exn:fail?
-                          (handler '(total failed))])
-          (do-prolog val-name ctc-name)
-          (run-exercise (λ ()
-                           (contract-random-exercise ctc
-                                                     val 
-                                                     #:fuel fuel
-                                                     #:print-gen print-gen
-                                                     #:tests num-tests))
-                        ctc
-                        ctc-name
-                        val-name)
-          (do-epilog run-stats))))
+      (define val-name (object-name val))
+      (define ctc (value-contract val))
+      (define ctc-name (contract-struct-name ctc))
+      (define handler (exercise-exn-handler val-name
+                                            run-stats))
+      (with-handlers ([exn:fail:contract:exercise:gen-fail?
+                        (handler '(genf))]
+                      [exn:fail:contract:exercise:ex-missing?
+                        (handler '(exm))]
+                      [exn:fail?
+                        (handler '(total failed))])
+        (do-prolog val-name ctc-name)
+        (run-exercise (λ ()
+                         (contract-random-exercise ctc
+                                                   val 
+                                                   #:fuel fuel
+                                                   #:print-gen print-gen
+                                                   #:tests num-tests))
+                      ctc
+                      ctc-name
+                      val-name)
+        (do-epilog run-stats)))
     ; Done exercising: cleanup and print the results (and traces, if enabled)
     (current-output-port save-current-output)
     (current-input-port save-current-input)
     (print-results run-stats))
   (when trace (trace traces)))
 
-;; contract-exercise-modules :: module-path [integer?]
+;; contract-exercise-modules
 ;; The module-level testing function. It is called on a module path
 ;; and individually exercises each available export with a contract
 ;; attached. Output is on the current-error-port.
@@ -147,30 +147,23 @@
                                    #:tests [num-tests 1]
                                    #:print-gen [print-gen #f]
                                    #:trace [trace #f])
-  (define (get-valsXnames mod)
-    (let* ([export-names (get-exports mod)]
-           [minus-excluded (if export-names
-                               (remove* exclude export-names)
-                               null)]
-           [exports (for/list ([provided minus-excluded])
-                      (with-handlers ([exn:fail? (λ (exn) #f)])
-                        (dynamic-require mod provided)))])
-      (for/lists (vals names)
-                 ([export exports]
-                  [name minus-excluded]
-                  #:when (has-contract? export))
-        (values export name))))
-  (let-values ([(all-vals all-names)
-                (for/lists (vals names)
-                           ([mod module-paths])
-                  (get-valsXnames mod))])
-    (contract-exercise-funs (map cons
-                                 (apply append all-vals)
-                                 (apply append all-names))
-                            #:fuel fuel
-                            #:tests num-tests
-                            #:print-gen print-gen
-                            #:trace trace)))
+  (define (get-vals mod)
+    (define export-names (get-exports mod))
+    (define minus-excluded (if export-names 
+                               (remove* exclude export-names) 
+                               null))
+    (define (require/f provided)
+      (define val 
+        (with-handlers ([exn:fail? (λ (exn) #f)])
+          (dynamic-require mod provided)))
+      (and (has-contract? val)
+           val))
+    (filter-map require/f minus-excluded))
+  (contract-exercise-vals (append-map get-vals module-paths)
+                          #:fuel fuel
+                          #:tests num-tests
+                          #:print-gen print-gen
+                          #:trace trace))
 
 
 ;; get-exports : module-path -> (or/c #f (listof symbol))

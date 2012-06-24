@@ -714,7 +714,9 @@
                         (read-bytes (max 0 (- end start)))))))]
            [p (open-input-bytes s)])
       (let loop ()
-        (let ([e (parameterize ([read-accept-compiled #t])
+        (let ([e (parameterize ([read-accept-compiled #t]
+                                [read-accept-reader #t]
+                                [read-accept-lang #t])
                    (read p))])
           (unless (eof-object? e)
             (eval e)
@@ -1215,9 +1217,13 @@
                                               (eq? (car s) nsr))
                                      (error
                                       'standard-module-name-resolver
-                                      "cycle in loading at ~.s: ~.s"
+                                      "cycle in loading\n  at path: ~a\n  paths:~a"
                                       filename
-                                      (map cdr (reverse (cons s loading))))))
+                                      (apply string-append
+                                             (let loop ([l (reverse loading)])
+                                               (if (null? l)
+                                                   '()
+                                                   (list* "\n   " (path->string (cdar l)) (loop (cdr l)))))))))
                                  loading)
                                 ((if (continuation-prompt-available? -loading-prompt-tag)
                                      (lambda (f) (f))
