@@ -171,7 +171,7 @@
 ;; Exerciser for or/c contracts
 (define (or/c-exercise flat-ctcs ho-ctcs)
   ;(eprintf "flats ~s ho-ctcs ~s\n" flat-ctcs ho-ctcs)
-  (λ (val fuel)
+  (λ (val fuel print-gen)
      (let loop ([flats flat-ctcs]
                 [hos ho-ctcs]
                 [missing #f]

@@ -21,7 +21,7 @@
 (define (exercise-fail ctc-name 
                        reason
                        [exn-type exn:fail:contract:exercise])
-  (let ([msg (format "Failed to exercise contract ~s: ~a" ctc-name reason)])
+  (let ([msg (format "Exercise failed for ~s: ~a" ctc-name reason)])
     (raise (exn-type msg
                      (current-continuation-marks)
                      ctc-name))))

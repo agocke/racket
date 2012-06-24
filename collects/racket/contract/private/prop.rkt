@@ -351,7 +351,10 @@
         (or exerciser
             (λ (val fuel print-gen)
                (unless ((make-flat-contract-first-order c) val)
-                 ((default-exercise c) val fuel print-gen))))))
+                 (or ((default-exercise c) val fuel print-gen)
+                     (exercise-fail (make-flat-contract-name c)
+                                    (format "~s does not match contract"
+                                            val))))))))
    #:can-generate (λ (c) (make-flat-contract-can-generate c))))
 
 (define ((build-contract mk default-name)
