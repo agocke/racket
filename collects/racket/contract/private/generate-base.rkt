@@ -28,7 +28,7 @@
 (define generate/indirect-trace (make-parameter #f))
 
 ;; for/generate-fail
-;; Like for/list, but if it hits a generate-ctc-fail, returns generate-ctc-fail
+;; Like map, but if it hits a generate-ctc-fail, returns generate-ctc-fail
 (define (gen-fail-map fun lst)
   (let ([nlst (sequence->list (stop-after (sequence-map fun (in-list lst))
                                           generate-ctc-fail?))])
@@ -166,8 +166,8 @@
 
 ;; given a predicate returns a generate for this predicate or generate-ctc-fail
 (define (find-generate func [name "internal"])
-  (hash-ref gen-hash func (λ ()
-                             (generate-ctc-fail func))))
+  (hash-ref gen-hash func (λ () 
+                             (λ (fuel) (generate-ctc-fail func)))))
 
 ;; all the contracts available in the current environment
 (define (get-env-contracts)

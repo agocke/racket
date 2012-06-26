@@ -8,10 +8,5 @@
   (λ (fuel) (string->url "http://google.com")))
 
 (contract-exercise-modules '(net/url)
-                           #:exclude '(string->url 
-                                        path->url 
-                                        url 
-                                        netscape/string->url
-                                        combine-url/relative
-                                        path/param)
-                           #:tests 30)
+                           #:exclude '(display-pure-port get-pure-port/headers)
+                           #:tests 200)

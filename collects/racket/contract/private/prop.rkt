@@ -223,7 +223,7 @@
   (build-property make-contract-property 'anonymous-contract values))
 
 (define ((default-generate ctc) fuel)
-  (generate-ctc-fail (contract-struct-name ctc)))
+  (generate-ctc-fail ctc))
 
 (define ((default-exercise ctc) val fuel print-gen)
   (exercise-missing (contract-struct-name ctc)))
@@ -350,11 +350,10 @@
       (let ([exerciser (make-flat-contract-exercise c)])
         (or exerciser
             (λ (val fuel print-gen)
-               (unless ((make-flat-contract-first-order c) val)
-                 (or ((default-exercise c) val fuel print-gen)
-                     (exercise-fail (make-flat-contract-name c)
-                                    (format "~s does not match contract"
-                                            val))))))))
+               (or ((make-flat-contract-first-order c) val)
+                   (exercise-fail (make-flat-contract-name c)
+                                  (format "~s does not match contract"
+                                          val)))))))
    #:can-generate (λ (c) (make-flat-contract-can-generate c))))
 
 (define ((build-contract mk default-name)

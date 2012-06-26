@@ -1019,8 +1019,12 @@
    #:generate
    (λ (ctc)
       (λ (fuel)
-         (let ([c (generate/direct contract? fuel)])
-           (contract-random-generate c fuel))))
+         (define all-ctcs (permute (get-env-contracts)))
+         (for/or ([c all-ctcs])
+           (define maybe-val (contract-random-generate c fuel))
+           (if (generate-ctc-fail? maybe-val)
+               #f
+               maybe-val))))
    ))
 
 (define/final-prop any/c (make-any/c))
@@ -1152,7 +1156,7 @@
              [else (coerce-contract 'contract?-generate sample)]))))
 
 (define (flat-contract predicate) (coerce-flat-contract 'flat-contract predicate))
-(define (flat-named-contract name predicate [generate (generate-ctc-fail #f)] [exercise #f])
+(define (flat-named-contract name predicate [generate #f])
   (cond
     [(and (procedure? predicate)
           (procedure-arity-includes? predicate 1))

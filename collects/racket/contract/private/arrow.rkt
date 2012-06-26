@@ -571,37 +571,35 @@ v4 todo:
 (define (check-ctcs ctcs vals fuel) 
   ; Exercise all exerciseable structs
   (for/list ([c ctcs]
-             [v vals])
+             [v vals]
+             #:when (not (flat-contract? c)))
     (contract-random-exercise c v #:fuel fuel)))
 
 (define (->-generate ctc)
   (define doms-ctcs (base->-doms/c ctc))
   (define rngs-ctcs (base->-rngs/c ctc))
   (λ (fuel)
-     (define (do-generate)
-       (define doms-l (length doms-ctcs))
-       (define new-fuel (- fuel 1))
-       (define rngs-gens
-         (gen-fail-map (λ (c) (contract-random-generate c new-fuel))
-                       rngs-ctcs))
-       (define env (generate-env))
-       (if (generate-ctc-fail? rngs-gens)
-           rngs-gens
-           (procedure-reduce-arity
-             (λ args
-                (begin 
-                  ; Make sure that the args match the contract
-                  (check-ctcs doms-ctcs args new-fuel)
-                  ; No exception -- stash values
-                  (for ([c doms-ctcs]
-                        [a args])
-                    (env-stash env c a))
-                  ; Return the generated values
-                  (apply values rngs-gens)))
-             doms-l)))
-     (if (> fuel 0)
-         (do-generate)
-         (generate-ctc-fail ctc))))
+     (define doms-l (length doms-ctcs))
+     (define new-fuel (- fuel 1))
+     (define rngs-gens
+       (gen-fail-map 
+         (λ (c) (contract-random-generate c new-fuel))
+         rngs-ctcs))
+     (define env (generate-env))
+     (if (generate-ctc-fail? rngs-gens)
+         rngs-gens
+         (procedure-reduce-arity
+           (λ args
+              (begin 
+                ; Make sure that the args match the contract
+                (check-ctcs doms-ctcs args new-fuel)
+                ; No exception -- stash values
+                (for ([c doms-ctcs]
+                      [a args])
+                  (env-stash env c a))
+                ; Return the generated values
+                (apply values rngs-gens)))
+           doms-l))))
 
 ;; Exercise takes a function and fuel, generates the domain of the function, and
 ;; calls the function with the resulting domain. The results are then checked
@@ -2150,8 +2148,7 @@ v4 todo:
                    [name (syntax->datum stx)])
        #'(flat-named-contract 'name 
                               (λ (x) (and (procedure? x) (procedure-arity-includes? x dom-len #t)))
-                              ->-generate
-                              ->-exercise))]
+                              ->-generate))]
     [(_ any/c boolean?)
      ;; special case (-> any/c boolean?) to use predicate/c
      (not (syntax-parameter-value #'making-a-method))

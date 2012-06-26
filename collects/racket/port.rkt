@@ -120,7 +120,7 @@
        (λ (s)
           (rand-choice
             [1/50 eof]
-            [else (begin (bytes-set! s 0 (generate/direct byte? 0))
+            [else (begin (bytes-set! s 0 (generate/direct byte? 1))
                          1)]))
        #f
        void)))

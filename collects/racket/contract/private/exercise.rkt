@@ -99,9 +99,9 @@
 
   ; Setup before the exercises
   (set! save-current-output (current-output-port))
-  (current-output-port (generate/direct output-port? 0))
+  (current-output-port (generate/direct output-port? 1))
   (set! save-current-input (current-input-port))
-  (current-input-port (generate/direct input-port? 0))
+  (current-input-port (generate/direct input-port? 1))
 
   ; Do the exercises
   (parameterize ([generate-env env]

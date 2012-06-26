@@ -73,11 +73,9 @@
   (define ctc (coerce-contract 'generate/direct maybe-ctc))
   (add-trace (contract-struct-name ctc) 'generate/direct)
   (parameterize ([generate-env (or (generate-env) (make-hash))])
-    (let ([g (contract-struct-generate ctc)])
-      ; Check if the contract has a direct generate attached
-      (if (generate-ctc-fail? g)
-          g 
-          (g fuel)))))
+    (if (> fuel 0)
+        ((contract-struct-generate ctc) fuel)
+        (generate-ctc-fail ctc))))
 
 ; generate/direct-env :: contract int -> value
 ; Attemps to find a value with the given contract in the environment.

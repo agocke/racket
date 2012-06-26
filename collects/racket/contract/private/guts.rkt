@@ -336,12 +336,7 @@
                    (or generate
                        (let ([fn (predicate-contract-pred ctc)])
                          (find-generate fn (predicate-contract-name ctc))))))
-   #:exercise (λ (ctc)
-                 (λ (val fuel print-gen) 
-                    (or ((predicate-contract-pred ctc) val)
-                        (exercise-fail (predicate-contract-name ctc)
-                                       (format "~s does not match contract"
-                                               val)))))))
+   ))
 
 (define (check-flat-named-contract predicate) (coerce-flat-contract 'flat-named-contract predicate))
 (define (check-flat-contract predicate) (coerce-flat-contract 'flat-contract predicate))
