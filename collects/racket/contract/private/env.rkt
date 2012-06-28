@@ -1,26 +1,43 @@
 #lang racket/base
 
-(require "arrow.rkt"
-         "guts.rkt")
-(provide
- build-env)
+(require racket/sequence
+         "rand.rkt")
 
-(define (make-env)
-  (list))
+(provide filter-vals
+         generate-env
+         make-env
+         env-add
+         bulk-env-add)
 
-(define (extend-env ctc exp env)
-  (cons (list ctc exp)
-        env))
+; env parameter
+(define generate-env (make-parameter #f))
 
-(define (build-env f-l)
-  (let ([value-contract (dynamic-require 'racket/contract 'value-contract)]
-        ;        [->-rngs/c (dynamic-require 'racket/contract/private/arrow '->-rngs/c)]
-        ;        [contract-stronger? (dynamic-require 'racket/contract 'contract-stronger?)]
-        [env-item (dynamic-require 'racket/contract/private/generator-base 'env-item)]
-        ;        [->-rngs/c (dynamic-require 'racket/contract/private/arrow '->-rngs/c)]
-        )
-    (map (λ (f) 
-           (env-item (value-contract f)
-                     f))
-         f-l))
-  )
+(define make-env make-hash)
+
+; Adds a new contract and value to the environment if they don't already exist
+(define (env-add env ctc val)
+  (unless (void? val)
+    (let ([curvals (hash-ref env ctc (hash))])
+      (unless (hash-has-key? curvals val)
+        (hash-set! env 
+                   ctc
+                   (hash-set curvals val 0))))))
+
+; Bulk add to the environment
+(define (bulk-env-add ctcs vals [env (make-env)])
+  (for ([c ctcs]
+        [v vals])
+      (env-add env c v))
+  env)
+
+;; Helper function for getting random matching values from the environment.
+;; "Matching" is defined as returning true in the predicate f, which has the
+;; contract (ctc (listof any) -> boolean?). Returns a sequence of the matching
+;; (ctc . fun) pairs. If no values match the sequence is empty.
+(define (filter-vals f env)
+  (for/fold ([vals-seq empty-sequence])
+            ([(ctc vals) (in-hash env)]
+             #:when (f ctc vals))
+    (sequence-append vals-seq 
+                     (sequence-map (λ (v) (cons ctc v))
+                                   (in-hash-keys vals)))))

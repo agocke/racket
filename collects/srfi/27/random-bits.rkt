@@ -109,7 +109,7 @@
 
 #lang scheme/base
 
-(require mzlib/contract)
+(require racket/contract)
   
 (provide random-real
          default-random-source

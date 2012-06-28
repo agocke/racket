@@ -10,7 +10,7 @@
 (module |63| mzscheme
   
   (require srfi/4
-           mzlib/contract)
+           racket/contract)
   
   (define-syntax make-cvector
     (syntax-rules ()

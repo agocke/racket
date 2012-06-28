@@ -1,13 +1,13 @@
 #lang racket/base
 
 (require "rand.rkt"
+         "env.rkt"
          "exercise-base.rkt"
          "exercise-main.rkt"
          "generate-base.rkt"
          "guts.rkt"
          "prop.rkt"
-         racket/list
-         racket/sequence)
+         racket/list)
 
 (provide generate-env
          env-stash
@@ -28,7 +28,6 @@
 (provide filter-vals
          find-val-fun
          generate/indirect-env
-         make-env-from-funs
          valid-gen)
 
 ; intercept parameter
@@ -54,7 +53,7 @@
 (define (contract-random-generate maybe-ctc fuel)
   (define ctc (coerce-contract 'contract-random-generate maybe-ctc))
   (add-trace (contract-struct-name ctc) 'contract-random-generate)
-  (parameterize ([generate-env (or (generate-env) (make-hash))])
+  (parameterize ([generate-env (or (generate-env) (make-env))])
     ; choose randomly until one method succeeds or all fail
     (let trygen ([options (permute (list generate/direct
                                          generate/direct-env
@@ -72,7 +71,7 @@
 (define (generate/direct maybe-ctc fuel)
   (define ctc (coerce-contract 'generate/direct maybe-ctc))
   (add-trace (contract-struct-name ctc) 'generate/direct)
-  (parameterize ([generate-env (or (generate-env) (make-hash))])
+  (parameterize ([generate-env (or (generate-env) (make-env))])
     (if (> fuel 0)
         ((contract-struct-generate ctc) fuel)
         (generate-ctc-fail ctc))))
@@ -83,7 +82,7 @@
 (define (generate/direct-env maybe-ctc fuel)
   (define ctc (coerce-contract 'generate-direct/env maybe-ctc))
   (add-trace (contract-struct-name ctc) 'generate-direct/env)
-  (parameterize ([generate-env (or (generate-env) (make-hash))])
+  (parameterize ([generate-env (or (generate-env) (make-env))])
     (let ([val (find-val (λ (c vs) (contract-stronger? c ctc))
                           (generate-env))])
       (if (void? val)
@@ -108,7 +107,7 @@
         (if (not (generate-ctc-fail? gen))
             (list gen)
             #f))))
-  (parameterize ([generate-env (or (generate-env) (make-hash))])
+  (parameterize ([generate-env (or (generate-env) (make-env))])
     (if (> fuel 0)
         (let* ([vals (get-permuted-vals ctc)]
                [val (get-a-val ctc vals)])
@@ -116,32 +115,6 @@
               (generate-ctc-fail ctc)
               (car val)))
         (generate-ctc-fail ctc))))
-
-;; Helper function for getting random matching values from the environment.
-;; "Matching" is defined as returning true in the predicate f, which has the
-;; contract (ctc (listof any) -> boolean?). Returns a sequence of the matching
-;; (ctc . fun) pairs. If no values match the sequence is empty.
-(define (filter-vals f env)
-  (for/fold ([vals-seq empty-sequence])
-            ([(ctc vals) (in-hash env)]
-             #:when (f ctc vals))
-    (sequence-append vals-seq (map (λ (v) (cons ctc v))
-                                   vals))))
-
-(define find-val (compose rand-seq filter-vals))
-
-;; valid-gen makes a predicate for filter-vals which returns #t 
-;; if the environment procedures can generate the target contract.
-(define (valid-gen target-ctc)
-  (λ (env-ctc env-vals)
-     (and (not (empty? env-vals))
-          ; Check all contracts that env-ctc to see if any is
-          ; stronger than the target contract
-          (for/or ([c ((contract-struct-can-generate env-ctc) 'exercise)])
-                  (contract-stronger? c target-ctc)))))
-
-(define (find-val-fun ctc env)
-  (find-val (valid-gen ctc) env))
 
 ;; Exercises the given (ctc . fun) pair in order to grab a value
 ;; generated during the exercising. Returns either the value generated
@@ -162,12 +135,17 @@
                  (vector-ref ienv 2)
                  (generate-ctc-fail ctc)))))))
 
-;; make-env-from-funs :: (listof procedure?) -> env
-;; Make an environment from a list of functions
-(define make-env-from-funs 
-  (λ funs
-     (let ([env (make-hash)])
-       (for-each (λ (f) (when (has-contract? f) 
-                              (env-stash env (value-contract f) f)))
-                 funs)
-       env)))
+(define find-val (compose rand-seq filter-vals))
+
+(define (find-val-fun ctc env)
+  (find-val (valid-gen ctc) env))
+
+;; valid-gen makes a predicate for filter-vals which returns #t 
+;; if the environment procedures can generate the target contract.
+(define ((valid-gen target-ctc) env-ctc env-vals)
+  (and (not (= 0 (hash-count env-vals)))
+       ; Check all contracts that env-ctc to see if any is
+       ; stronger than the target contract
+       (for/or ([c ((contract-struct-can-generate env-ctc) 'exercise)])
+         (contract-stronger? c target-ctc))))
+

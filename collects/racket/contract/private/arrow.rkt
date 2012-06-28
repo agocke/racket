@@ -575,9 +575,7 @@ v4 todo:
              #:when (not (flat-contract? c)))
     (contract-random-exercise c v #:fuel fuel)))
 
-(define (->-generate ctc)
-  (define doms-ctcs (base->-doms/c ctc))
-  (define rngs-ctcs (base->-rngs/c ctc))
+(define (->-generate doms-ctcs rngs-ctcs)
   (λ (fuel)
      (define doms-l (length doms-ctcs))
      (define new-fuel (- fuel 1))
@@ -619,7 +617,8 @@ v4 todo:
          (begin 
            ; Print values if print-gen is set
            (when print-gen (fprintf (exercise-output-port)
-                                    "print-gen: ~s\n"
+                                    "print-gen: ~s ~s\n"
+                                    fun
                                     doms-gen))
            ; Call the function with the generated domain
            (let ([rngs (call-with-values (λ () (apply fun doms-gen))
@@ -666,7 +665,8 @@ v4 todo:
      #:name ->-name
      #:first-order ->-first-order
      #:stronger ->-stronger?
-     #:generate ->-generate
+     #:generate (λ (ctc) (->-generate (base->-doms/c ctc)
+                                (base->-rngs/c ctc)))
      #:exercise ->-exercise
      #:can-generate ->-can-generate)))
 
@@ -677,7 +677,9 @@ v4 todo:
    #:name ->-name
    #:first-order ->-first-order
    #:stronger ->-stronger?
-   #:generate ->-generate
+   #:generate (λ (ctc)
+                 (->-generate (base->-doms/c ctc)
+                              (base->-rngs/c ctc)))
    #:exercise ->-exercise
    #:can-generate ->-can-generate))
 
@@ -2135,7 +2137,8 @@ v4 todo:
                               (proj val)))))))
    #:name (lambda (ctc) 'predicate/c)
    #:first-order (let ([f (contract-struct-first-order predicate/c-private->ctc)]) (λ (ctc) f))
-   #:stronger (λ (this that) (contract-struct-stronger? predicate/c-private->ctc that))))
+   #:stronger (λ (this that) (contract-struct-stronger? predicate/c-private->ctc that))
+   #:generate (λ (ctc) (->-generate (list any/c) (list boolean?)))))
 
 (define -predicate/c (predicate/c))
 
@@ -2147,8 +2150,7 @@ v4 todo:
      (with-syntax ([dom-len (- (length (syntax->list stx)) 2)]
                    [name (syntax->datum stx)])
        #'(flat-named-contract 'name 
-                              (λ (x) (and (procedure? x) (procedure-arity-includes? x dom-len #t)))
-                              ->-generate))]
+                              (λ (x) (and (procedure? x) (procedure-arity-includes? x dom-len #t)))))]
     [(_ any/c boolean?)
      ;; special case (-> any/c boolean?) to use predicate/c
      (not (syntax-parameter-value #'making-a-method))

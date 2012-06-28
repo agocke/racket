@@ -2,6 +2,7 @@
 
 (require racket/list
          racket/sequence
+         "env.rkt"
          "rand.rkt")
 
 (provide gen-fail-map
@@ -36,21 +37,14 @@
           [(generate-ctc-fail? (last nlst)) (last nlst)]
           [else nlst])))
 
-; env parameter
-(define generate-env (make-parameter #f))
-
-; Adds a new contract and value to the environment if they don't already exist
-(define (env-add env ctc val)
-  (let ([curvals (hash-ref env ctc '())])
-    (unless (member val curvals)
-      (hash-set! env ctc (cons val curvals)))))
-
-; Bulk add to the environment
-(define (bulk-env-add ctcs vals [env (make-hash)])
-  (for ([c ctcs]
-        [v vals])
-      (env-add env c v))
-  env)
+;; all the contracts available in the current environment
+(define (get-env-contracts)
+  (let* ([env (generate-env)]
+         [gen-ctcs (and env (hash-keys (generate-env)))]
+         [pred-ctcs (hash-keys gen-hash)])
+    (if gen-ctcs
+        (append gen-ctcs pred-ctcs)
+        pred-ctcs)))
 
 (define make-pairs 
   (λ args
@@ -168,15 +162,6 @@
 (define (find-generate func [name "internal"])
   (hash-ref gen-hash func (λ () 
                              (λ (fuel) (generate-ctc-fail func)))))
-
-;; all the contracts available in the current environment
-(define (get-env-contracts)
-  (let* ([env (generate-env)]
-         [gen-ctcs (and env (hash-keys (generate-env)))]
-         [pred-ctcs (hash-keys gen-hash)])
-    (if gen-ctcs
-        (append gen-ctcs pred-ctcs)
-        pred-ctcs)))
 
 (define (get-arg-names-space space-needed)
   (let ([rv (thread-cell-ref arg-names-count)])

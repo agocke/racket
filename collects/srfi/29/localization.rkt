@@ -1,6 +1,6 @@
 (module localization mzscheme
   
-  (require mzlib/contract
+  (require racket/contract
            mzlib/file
            mzlib/runtime-path
            mzlib/string
