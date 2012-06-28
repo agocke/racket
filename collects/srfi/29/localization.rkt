@@ -1,18 +1,10 @@
 (module localization mzscheme
   
-  (require racket/contract
-           mzlib/file
+  (require mzlib/file
            mzlib/runtime-path
            mzlib/string
-           syntax/modread)
-  
-  (provide/contract (current-language (parameter/c symbol?))
-                    (current-country (parameter/c symbol?))
-                    (current-locale-details (parameter/c (listof symbol?)))
-                    (declare-bundle! (-> (listof symbol?) (listof pair?) any))
-                    (load-bundle! (->* ((listof symbol?)) any/c any))
-                    (store-bundle! (-> (listof symbol?) any))
-                    (localized-template (-> symbol? any/c any)))
+           syntax/modread
+           racket/contract)
   
   (provide re-read-locale)
   
@@ -127,4 +119,13 @@
              (cond ((and bundle (assq template-name bundle)) => cdr)
                    ((null? (cdr specifier)) #f)
                    (else (loop (rdc specifier))))))))
+
+  (provide/contract [current-language (parameter/c symbol?)]
+                    [current-country (parameter/c symbol?)]
+                    [current-locale-details (parameter/c (listof symbol?))]
+                    [declare-bundle! (-> (listof symbol?) (listof pair?) any)]
+                    [load-bundle! (->* ((listof symbol?)) #:rest any/c any)]
+                    [store-bundle! (-> (listof symbol?) any)]
+                    [localized-template (-> symbol? any/c any)])
+  
   )

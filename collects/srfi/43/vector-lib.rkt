@@ -5,7 +5,7 @@
   
   (require srfi/8/receive
            mzlib/etc
-           racket/contract)
+           mzlib/contract)
   
   (define mutable-vector/c
     (and/c vector? (not/c immutable?)))

@@ -329,24 +329,24 @@
   
   (provide/contract
    
-   (array-dimensions (-> array? any))
+   [array-dimensions (-> array? any)]
    
-   (make-array
-    (->* (array?) (listof natural-number/c) any))
+   [make-array
+    (->* (array?) #:rest (listof natural-number/c) any)]
    
-   (make-shared-array
+   [make-shared-array
     (->* (array?
           (unconstrained-domain-> (listof natural-number/c)))
-         (listof natural-number/c)
-         any))
+         #:rest (listof natural-number/c)
+         any)]
    
-   (list->array
-    (->r ((rank natural-number/c)
-          (proto array?)
-          (list (if (zero? rank)
-                    any/c
-                    list?)))
-         any))
+   [list->array
+    (->i ([rank natural-number/c]
+          [proto array?]
+          [list (rank) (if (zero? rank)
+                           any/c
+                           list?)])
+         any)]
    
    (array->list
     (-> array? any))
@@ -354,22 +354,29 @@
     (-> array? any))
    
    (array-in-bounds?
-    (->* (array?) (listof natural-number/c) any))
+    (->* (array?) #:rest (listof natural-number/c) any))
    
    (array-set!
-    (->r ((array array?)
-          (val (implementations (array-store-type array) 3)))
-         indices (lambda _ (apply array-in-bounds? array indices))
+    (->i ([array array?]
+          [val (array) (implementations (array-store-type array) 3)])
+         #:rest [rest (array) (λ indices (apply array-in-bounds? 
+                                                array 
+                                                indices))]
          any))
    
    (array-ref
-    (->r ((array array?)) indices 
-         (lambda _ (apply array-in-bounds? array indices)) 
+    (->i ([array array?]) 
+         #:rest [rest (array)
+                      (λ indices (apply array-in-bounds? array indices))]
          any))
    
    (vector->array
-    (->r ((vector vector?) (proto array?))
-         dimensions (lambda _ (eqv? (vector-length vector) (apply * dimensions)))
+    (->i ([vector vector?] 
+          [proto array?])
+         #:rest [rest (vector)
+                            (λ dimensions
+                               (eqv? (vector-length vector) 
+                                     (apply * dimensions)))]
          any)))
   
   (define-syntax A:
