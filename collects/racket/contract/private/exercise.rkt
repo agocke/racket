@@ -39,7 +39,7 @@
   (define (print-results run-stats)
     (define (get k) (hash-ref run-stats k))
     (fprintf (exercise-output-port)
-             "Ran ~s tests, got ~s passes and ~s failures.\n"
+             "Exercised ~s exports: got ~s passes and ~s failures.\n"
              (get 'total)
              (get 'passed)
              (get 'failed))
