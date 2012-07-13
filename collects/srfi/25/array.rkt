@@ -57,7 +57,7 @@
 
 (module array mzscheme
   (require srfi/9;; record-types
-	   )
+	         racket/contract)
   (provide array? make-array shape array array-rank
 	   array-start array-end array-ref array-set! share-array
 	   ;; FIXME: should we export all these?
@@ -672,4 +672,16 @@
   ;; The array library:
   (include "arlib.scm")
 
+  (provide shape array array-rank
+           array-start array-end array-ref array-set! share-array
+           ;; FIXME: should we export all these?
+           ;; Array library: high level implementation of useful procedures
+           array-shape array-length array-size array-equal?
+           shape-for-each array-for-each-index
+           tabulate-array array-retabulate! array-map array-map!
+           array->vector share-array/prefix share-array/origin
+           array-append transpose share-nths)
+  (provide/contract
+    [array? contract?]
+    [make-array (->* (shape?) (any/c) array?)])
   )
