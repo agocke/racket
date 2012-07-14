@@ -617,8 +617,8 @@ v4 todo:
          (begin 
            ; Print values if print-gen is set
            (when print-gen (fprintf (exercise-output-port)
-                                    "print-gen: ~s ~s\n"
-                                    fun
+                                    "print-gen: ~a ~s\n"
+                                    (object-name fun)
                                     doms-gen))
            ; Call the function with the generated domain
            (let ([rngs (call-with-values (λ () (apply fun doms-gen))

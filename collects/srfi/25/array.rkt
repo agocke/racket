@@ -58,15 +58,6 @@
 (module array mzscheme
   (require srfi/9;; record-types
 	         racket/contract)
-  (provide array? make-array shape array array-rank
-	   array-start array-end array-ref array-set! share-array
-	   ;; FIXME: should we export all these?
-	   ;; Array library: high level implementation of useful procedures
-	   array-shape array-length array-size array-equal?
-	   shape-for-each array-for-each-index
-	   tabulate-array array-retabulate! array-map array-map!
-	   array->vector share-array/prefix share-array/origin
-	   array-append transpose share-nths)
   ;; As defined in as-srfi-9-record.scm in the reference implementation:
   (define-record-type
     array:srfi-9-record-type-descriptor
@@ -672,7 +663,17 @@
   ;; The array library:
   (include "arlib.scm")
 
-  (provide shape array array-rank
+  (define shape/c 
+    (flat-named-contract 'shape/c
+                         (lambda (arg)
+                            (and ((listof exact-integer?) arg)
+                                 (even? (length arg))
+                                 (let loop ([rest arg])
+                                   (or (null? rest)
+                                       (and (<= (car rest) (cadr rest))
+                                            (loop (cddr rest)))))))))
+
+  (provide array array-rank
            array-start array-end array-ref array-set! share-array
            ;; FIXME: should we export all these?
            ;; Array library: high level implementation of useful procedures
@@ -682,6 +683,13 @@
            array->vector share-array/prefix share-array/origin
            array-append transpose share-nths)
   (provide/contract
-    [array? contract?]
-    [make-array (->* (shape?) (any/c) array?)])
+    [array? (any/c . -> . boolean?)]
+    [make-array (->* (array?) (any/c) array?)]
+    [shape (->* () #:rest shape/c array?)]
+    [array (->* (array?) #:rest any/c array?)]
+    [array-rank (-> array? exact-integer?)]
+    [array-start (-> array? exact-integer?)]
+    [array-end (-> array? exact-integer?)]
+    [array-ref (-> array? #:rest exact-integer? any/c)]
+    [array-set! (-> array? 
   )

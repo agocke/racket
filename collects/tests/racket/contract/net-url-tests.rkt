@@ -9,4 +9,5 @@
 
 (contract-exercise-modules '(net/url)
                            #:exclude '(display-pure-port get-pure-port/headers)
-                           #:tests 200)
+                           #:tests 10
+                           #:print-gen #t)
