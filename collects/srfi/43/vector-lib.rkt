@@ -5,7 +5,7 @@
   
   (require srfi/8/receive
            mzlib/etc
-           mzlib/contract)
+           racket/contract)
   
   (define mutable-vector/c
     (and/c vector? (not/c immutable?)))
@@ -14,17 +14,13 @@
            exact?))
   
   (define (vec-start-end-contract vector?)
-    (case->
-     (-> vector? any)
-     (->r ((vec vector?)
-           (start (and/c index/c
-                         (<=/c (vector-length vec)))))
-          any)
-     (->pp ((vec vector?)
-            (start index/c)
-            (end index/c))
-           (<= start end (vector-length vec))
-           any)))
+    (->i ([vec vector?])
+         ([start (vec) (and/c index/c
+                              (<=/c (vector-length vec)))]
+          [end (vec start) 
+               (and/c index/c
+                      (between/c start (vector-length vec)))])
+         [_ vector?]))
   
   ;;; (%SMALLEST-LENGTH <vector-list> <default-length>)
   ;;;       -> exact, nonnegative integer
@@ -49,42 +45,30 @@
                  (f i seed)
                  (vector-set! vec i elt)
                  (unfold1! f vec (sub1 i) new-seed))))
-  
+
   (define unfold-contract
-    (->r ((f (lambda (f)
-               (and (procedure? f)
-                    (procedure-arity-includes? f (add1 (length seeds))))))
-          (len index/c))
-         seeds list?
-         any))
-  
+    (->i ([f procedure?]
+          [len index/c])
+         #:rest (seeds list?)
+         #:pre (f seeds) (procedure-arity-includes? f
+                                                    (add1 (length seeds)))
+         [_ vector?]))
+
   (define copy-contract
-    (case->
-     (-> vector? any)
-     (->r ((vec vector?)
-           (start (and/c index/c
-                         (<=/c (vector-length vec)))))
-          any)
-     (->r ((vec vector?)
-           (start (and/c index/c
-                         (<=/c (vector-length vec))))
-           (end (and/c index/c
-                       (>=/c start))))
-          any)
-     (->r ((vec vector?)
-           (start (and/c index/c
-                         (<=/c (vector-length vec))))
-           (end (and/c index/c
-                       (>=/c start)))
-           (fill any/c))
-          any)))
-  
-  (provide/contract (vector-unfold unfold-contract)
-                    (vector-unfold-right unfold-contract)
-                    (vector-copy copy-contract)
-                    (vector-reverse-copy (vec-start-end-contract vector?))
-                    (vector-append (->* () (listof vector?) any))
-                    (vector-concatenate (-> (listof vector?) any)))
+    (->i ([vec vector?]) 
+         ([start (vec) (and/c index/c
+                              (<=/c (vector-length vec)))]
+          [end (start) (and/c index/c
+                              (>=/c start))]
+          [fill any/c])
+         [_ vector?]))
+
+  (provide/contract [vector-unfold unfold-contract]
+                    [vector-unfold-right unfold-contract]
+                    [vector-copy copy-contract]
+                    [vector-reverse-copy (vec-start-end-contract vector?)]
+                    [vector-append (->* () (listof vector?) any)]
+                    [vector-concatenate (-> (listof vector?) any)])
   
   ;;; (VECTOR-UNFOLD <f> <length> <initial-seed> ...) -> vector
   ;;;     (F <index> <seed> ...) -> [elt seed' ...]
@@ -264,20 +248,20 @@
                           (loop (add1 i)))))))))
   
   (define fold-contract
-    (->r ((kons (lambda (f)
-                  (and (procedure? f)
-                       (procedure-arity-includes? f (+ 3 (length vec))))))
-          (knil any/c)
-          (vec1 vector?))
-         vec (listof vector?)
+    (->i ([kons procedure?]
+          [knil any/c]
+          [vec1 vector?])
+         #:rest (vec (listof vector?))
+         #:pre (kons vec) (procedure-arity-includes? kons 
+                                                     (+ 3 (length vec)))
          any))
   
   (define (map-contract m)
-    (->r ((f (lambda (f)
-               (and (procedure? f)
-                    (procedure-arity-includes? f (+ 2 (length vec))))))
-          (vec1 m))
-         vec (listof vector?)
+    (->i ([f procedure?]
+          [vec1 m])
+         #:rest (vec (listof vector?))
+         #:pre (f vec) (procedure-arity-includes? f
+                                                  (+ 2 (length vec)))
          any))
   
   (provide/contract (vector-fold fold-contract)
@@ -463,11 +447,11 @@
                                           (vector-length vec)))))))
   
   (define index-contract
-    (->r ((f (lambda (f)
-               (and (procedure? f)
-                    (procedure-arity-includes? f (add1 (length vec))))))
-          (vec1 vector?))
-         vec (listof vector?)
+    (->i ([f procedure?]
+          [vec1 vector?])
+         #:rest (vec (listof vector?))
+         #:pre (f vec) (procedure-arity-includes? f
+                                                  (add1 (length vec)))
          any))
   
   (provide/contract (vector-index index-contract)
@@ -659,53 +643,37 @@
                                        (vector-length vec))))))))
   
   (define copy!-contract
-    (case->
-     (->r ((target mutable-vector/c)
-           (tstart (and/c index/c
-                          (<=/c (- (vector-length target)
-                                   (vector-length source)))))
-           (source vector?))
-          any)
-     (->r ((target mutable-vector/c)
-           (tstart (and/c index/c
-                          (<=/c (- (vector-length target)
-                                   (- (vector-length source)
-                                      sstart)))))
-           (source vector?)
-           (sstart (and/c index/c
-                          (<=/c (vector-length source)))))
-          any)
-     (->pp ((target mutable-vector/c)
-            (tstart (and/c index/c
-                           (<=/c (- (vector-length target)
-                                    (- send sstart)))))
-            (source vector?)
-            (sstart index/c)
-            (send index/c))
-           (<= sstart send (vector-length source))
-           any)))
+    (->i ([target mutable-vector/c]
+          [tstart (target source) 
+                  (and/c index/c
+                         (<=/c (- vector-length target)
+                               (- vector-length source)))]
+          [source vector?])
+         ([sstart (source) (and/c index/c
+                                  (<=/c (vector-length source)))]
+          [send (source sstart) (and/c index/c
+                                       (between/c sstart
+                                                  (vector-length source)))])
+         #:pre (target tstart sstart send) (>= (vector-length target)
+                                               (+ tstart (- send sstart)))
+         any))
   
   (provide/contract (vector-swap!
-                     (->r ((vec mutable-vector/c)
-                           (i (and/c index/c
-                                     (</c (vector-length vec))))
-                           (j (and/c index/c
-                                     (</c (vector-length vec)))))
-                          any))
+                      (->i ([vec mutable-vector/c]
+                            [i (vec) (and/c index/c
+                                            (</c (vector-length vec)))]
+                            [j (vec) (and/c index/c
+                                            (</c (vector-length vec)))])
+                           any))
                     (rename my-vector-fill! s:vector-fill!
-                            (case->
-                             (-> vector? any/c any)
-                             (->r ((vec vector?)
-                                   (fill any/c)
-                                   (start (and/c index/c
-                                                 (<=/c (vector-length vec)))))
-                                  any)
-                             (->pp ((vec vector?)
-                                    (fill any/c)
-                                    (start index/c)
-                                    (end index/c))
-                                   (<= start end (vector-length vec))
-                                   any)))
+                            (->i ([vec mutable-vector/c]
+                                  [fill any/c])
+                                 ([start (vec) (and/c index/c
+                                                      (</c (vector-length vec)))]
+                                  [end (vec start) (and/c index/c
+                                                          (between/c start
+                                                                     (vector-length vec)))])
+                                 any))
                     (vector-reverse! (vec-start-end-contract mutable-vector/c))
                     (vector-copy! copy!-contract)
                     (vector-reverse-copy! copy!-contract))
